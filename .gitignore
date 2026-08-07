@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# tuah sync cleanup
+_[tournamentId]_page.tsx
+public/uploads/
+*.bak*
+*.tgz
+*_backup/
+*.log
+

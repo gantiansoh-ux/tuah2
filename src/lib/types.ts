@@ -2,12 +2,26 @@
 // TUAH2 — Database Types (Multi-Role Platform)
 // ============================================================
 
-// ---- Auth / Profiles ----
+// ============================================================
+// Auth / Profiles
+// ============================================================
 export interface Profile {
-  id: string;           // Supabase Auth UID
+  id: string;           // Profile UUID (primary key)
   email: string;
   full_name: string;
+  nickname?: string;
   phone?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  gender?: string;
+  date_of_birth?: string;
+  playing_hand?: PlayingHand;
+  club?: string;
+  school?: string;
+  occupation?: string;
+  social_media?: Record<string, string>;
+  website?: string;
   avatar_url?: string;
   roles: UserRole[];
   created_at: string;
@@ -15,7 +29,25 @@ export interface Profile {
 
 export type UserRole = 'organizer' | 'player' | 'umpire' | 'coach' | 'court_owner';
 
-// ---- Organizer ----
+export type PlayingHand = 'left' | 'right' | 'ambidextrous';
+
+// ---- Profile Verification ----
+export interface ProfileVerification {
+  id: string;
+  profile_id: string;
+  verification_type: VerificationType;
+  verified: boolean;
+  verified_at?: string;
+  document_url?: string;
+  notes?: string;
+  created_at: string;
+}
+
+export type VerificationType = 'identity' | 'association' | 'coach' | 'umpire' | 'organizer';
+
+// ============================================================
+// Organizer
+// ============================================================
 export interface OrganizerProfile {
   id: string;           // FK → profiles.id
   organization_name?: string;
@@ -27,19 +59,48 @@ export interface OrganizerProfile {
 export interface Tournament {
   id: string;
   organizer_id: string;
+  title?: string;
   name: string;
   description?: string;
+  venue?: string;
   location?: string;
   start_date: string;
   end_date: string;
   registration_open?: string;
   registration_close?: string;
-  entry_fee: number;
-  status: 'draft' | 'published' | 'registration' | 'live' | 'completed';
-  logo_url?: string;
+  registration_deadline?: string;
+  tournament_type?: TournamentType;
+  poster_url?: string;
   banner_url?: string;
+  logo_url?: string;
+  rules?: string;
+  prize?: string;
+  entry_fee: number;
+  status: TournamentStatus;
   created_at: string;
 }
+
+export type TournamentType =
+  | 'junior'
+  | 'open'
+  | 'school'
+  | 'corporate'
+  | 'veteran'
+  | 'team_event'
+  | 'league'
+  | 'knockout'
+  | 'round_robin'
+  | 'ladder'
+  | 'festival';
+
+export type TournamentStatus =
+  | 'draft'
+  | 'published'
+  | 'registration'
+  | 'live'
+  | 'completed'
+  | 'in_progress'
+  | 'cancelled';
 
 export interface Category {
   id: string;
@@ -58,9 +119,13 @@ export interface ScoringConfig {
   best_of: number;
   deuce: boolean;
   max_cap?: number;
+  deuce_cap?: number;
+  serve_switch?: number;
 }
 
-// ---- Player ----
+// ============================================================
+// Player
+// ============================================================
 export interface PlayerProfile {
   id: string;           // FK → profiles.id
   date_of_birth?: string;
@@ -82,25 +147,72 @@ export interface TournamentRegistration {
   registration_date: string;
 }
 
-// ---- Entries (tournament participants) ----
+// ============================================================
+// Entries (tournament participants)
+// ============================================================
 export interface Entry {
   id: string;
   category_id: string;
   player_1_id: string;
   player_2_id: string | null;
+  player_1_name?: string;
+  player_2_name?: string;
   seed: number | null;
+  ic_document_url?: string;
+  passport_url?: string;
+  student_card_url?: string;
+  payment_status?: PaymentStatus;
+  payment_method?: string;
+  payment_reference?: string;
+  registration_status?: RegistrationStatus;
+  confirmed_at?: string;
   created_at: string;
 }
 
-// ---- Umpire ----
+export type PaymentStatus = 'unpaid' | 'paid' | 'refunded';
+export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+
+// ============================================================
+// Coach
+// ============================================================
+export interface CoachProfile {
+  id: string;
+  profile_id: string;
+  coaching_license?: string;
+  years_experience: number;
+  current_club?: string;
+  students: string[];
+  coaching_fees: number;
+  training_schedule?: Record<string, any>;
+  rating: number;
+  bio?: string;
+  created_at: string;
+}
+
+export interface CoachReview {
+  id: string;
+  coach_profile_id: string;
+  reviewer_id: string;
+  rating: number;       // 1-5
+  comment?: string;
+  created_at: string;
+}
+
+// ============================================================
+// Umpire
+// ============================================================
 export interface UmpireProfile {
   id: string;
-  certification_level?: string;
+  profile_id: string;
+  certification?: string;
+  license_number?: string;
   experience_years: number;
-  rate_per_match: number;
-  rate_per_day: number;
+  matches_controlled: number;
+  accuracy_rating: number;
+  availability?: Record<string, any>;
+  languages: string[];
   bio?: string;
-  availability?: any;   // JSONB
+  created_at: string;
 }
 
 export interface UmpireReview {
@@ -112,50 +224,40 @@ export interface UmpireReview {
   created_at: string;
 }
 
-// ---- Coach ----
-export interface CoachProfile {
-  id: string;
-  certifications: string[];
-  specialization: string[];
-  rate_per_session: number;
-  bio?: string;
-  availability?: any;
-}
-
-export interface CoachReview {
-  id: string;
-  coach_id: string;
-  reviewer_id: string;
-  rating: number;
-  comment?: string;
-  created_at: string;
-}
-
-// ---- Court ----
+// ============================================================
+// Court
+// ============================================================
 export interface CourtProfile {
   id: string;
   owner_id: string;
-  name: string;
-  address: string;
-  city: string;
-  state?: string;
-  country: string;
-  number_of_courts: number;
-  hourly_rate: number;
-  facilities?: any;
+  hall_name: string;
+  address?: string;
+  gps_lat?: number;
+  gps_lng?: number;
   photos: string[];
-  availability?: any;
+  court_surface?: string;
+  court_lighting?: string;
+  parking?: string;
+  air_conditioning: boolean;
+  cafe: boolean;
+  toilet: boolean;
+  shower: boolean;
+  wheelchair_access: boolean;
+  available_time?: Record<string, any>;
+  rental_price: number;
+  created_at: string;
 }
 
 export interface CourtBooking {
   id: string;
   court_id: string;
   booker_id: string;
-  date: string;
+  booking_date: string;
   start_time: string;
   end_time: string;
-  status: 'pending' | 'confirmed' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   total_price: number;
+  created_at: string;
 }
 
 export interface CourtReview {
@@ -166,7 +268,42 @@ export interface CourtReview {
   comment?: string;
 }
 
-// ---- Match / Scoring (from TUAH1) ----
+// ============================================================
+// Sponsor
+// ============================================================
+export interface SponsorProfile {
+  id: string;
+  profile_id: string;
+  company_name?: string;
+  banner_url?: string;
+  video_url?: string;
+  promotion?: string;
+  website?: string;
+  created_at: string;
+}
+
+// ============================================================
+// Payments
+// ============================================================
+export interface Payment {
+  id: string;
+  user_id: string;
+  tournament_id?: string;
+  entry_id?: string;
+  amount: number;
+  currency: string;
+  payment_method?: string;  // 'fpx', 'duitnow'
+  payment_reference?: string;
+  status: 'pending' | 'completed' | 'failed' | 'refunded';
+  invoice_url?: string;
+  receipt_url?: string;
+  paid_at?: string;
+  created_at: string;
+}
+
+// ============================================================
+// Match / Scoring
+// ============================================================
 export interface Match {
   id: string;
   tournament_id: string;
@@ -180,9 +317,15 @@ export interface Match {
   court_name: string | null;
   scheduled_time: string | null;
   umpire_id?: string | null;
+  line_judge_id?: string | null;
+  camera_assigned: boolean;
+  court_status: CourtStatus;
   winner_id?: string | null;
+  winner_entry_id?: string | null;
   created_at: string;
 }
+
+export type CourtStatus = 'available' | 'playing' | 'cleaning' | 'maintenance';
 
 export interface Game {
   id: string;
@@ -213,7 +356,9 @@ export interface CardLog {
   created_at: string;
 }
 
-// ---- Notifications ----
+// ============================================================
+// Notifications
+// ============================================================
 export interface Notification {
   id: string;
   user_id: string;
@@ -225,6 +370,8 @@ export interface Notification {
   created_at: string;
 }
 
+// ============================================================
 // UI State
+// ============================================================
 export type Side = 'left' | 'right';
 export type WinnerType = 'entry_1' | 'entry_2' | null;

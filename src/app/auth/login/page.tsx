@@ -3,8 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -12,28 +10,36 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  const supabase = createClient();
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (authError) {
-      setError(authError.message);
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Login failed");
+      }
+
+      const data = await res.json();
+      const role = data.user?.role || 'player';
+      // Force full page reload to re-mount AuthProvider with fresh cookie
+      const target = role === 'organizer' ? '/organizer' :
+                     role === 'player' ? '/player' :
+                     role === 'umpire' ? '/umpire' : '/organizer';
+      window.location.href = target;
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push("/organizer");
-    router.refresh();
   }
 
   return (
@@ -70,6 +76,12 @@ export default function LoginPage() {
           {error && (
             <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm">{error}</div>
           )}
+
+          <div className="flex items-center justify-end">
+            <Link href="/auth/forgot-password" className="text-sm text-emerald-700 hover:underline">
+              Forgot Password?
+            </Link>
+          </div>
 
           <button
             type="submit"

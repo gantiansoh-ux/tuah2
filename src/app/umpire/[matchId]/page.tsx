@@ -2,30 +2,31 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import type { Match, Game, Category, ScoringConfig } from "@/lib/types";
 import { checkGameOver, checkMatchOver } from "@/lib/scoring";
 
-let _supabase: ReturnType<typeof createClient> | null = null;
-function getSupabase() {
-  if (!_supabase) _supabase = createClient();
-  return _supabase;
-}
-
 type Side = "left" | "right";
 type Phase = "setup" | "coin_toss" | "playing" | "game_over" | "match_over";
+
+async function api(url: string, options?: RequestInit) {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
 
 export default function UmpirePadPage({
   params,
 }: {
-  params: Promise<{ matchId: string }>;
+  params: { matchId: string };
 }) {
-  const { matchId } = use(params);
+  const { matchId } = params;
   const router = useRouter();
-  const supabase = getSupabase();
 
   const [match, setMatch] = useState<Match | null>(null);
   const [games, setGames] = useState<Game[]>([]);
@@ -40,56 +41,64 @@ export default function UmpirePadPage({
   const currentGame = games[currentGameIdx];
   const score1 = currentGame?.score_entry_1 ?? 0;
   const score2 = currentGame?.score_entry_2 ?? 0;
-  const p1Wins = games.filter((g) => g.winner_id === "entry_1").length;
-  const p2Wins = games.filter((g) => g.winner_id === "entry_2").length;
+  // FIX(#51-pad): count wins by REAL entry ids, not literal "entry_1"/"entry_2"
+  const p1Wins = games.filter((g) => g.winner_id === match?.entry_1_id).length;
+  const p2Wins = games.filter((g) => g.winner_id === match?.entry_2_id).length;
   const needed = Math.ceil(config.best_of / 2);
+  const name1 = match?.player_1_name || "Player 1";
+  const name2 = match?.player_2_name || "Player 2";
 
   useEffect(() => {
     loadMatch();
   }, [matchId]);
 
   async function loadMatch() {
-    const { data: m } = await supabase.from("matches").select("*").eq("id", matchId).single();
-    const matchData = m as Match;
-    setMatch(matchData);
+    try {
+      const data = await api(`/api/matches/${matchId}`);
+      const matchData = data.match as Match;
+      setMatch(matchData);
 
-    if (matchData.category_id) {
-      const { data: cat } = await supabase.from("categories").select("*").eq("id", matchData.category_id).single();
-      if (cat) {
-        const category = cat as Category;
-        setConfig(category.scoring_config);
+      if (data.category) {
+        setConfig(data.category.scoring_config || config);
       }
-    }
 
-    const { data: gs } = await supabase
-      .from("games").select("*").eq("match_id", matchId)
-      .order("game_number", { ascending: true });
-    const gamesData = gs as Game[] || [];
-
-    if (gamesData.length === 0) {
-      // No games exist, create first game
-      const { data: newGame } = await supabase.from("games").insert({
-        match_id: matchId,
-        game_number: 1,
-        score_entry_1: 0,
-        score_entry_2: 0,
-        status: "playing",
-        current_server: 1,
-      }).select().single();
-      setGames([newGame as Game]);
-      setPhase("coin_toss");
-    } else {
-      setGames(gamesData);
-      const lastGame = gamesData[gamesData.length - 1];
-      if (lastGame.status === "completed") {
-        setPhase("match_over");
+      const gamesData = data.games || [];
+      if (gamesData.length === 0) {
+        // Create first game
+        const gameRes = await api(`/api/games/create`, {
+          method: "POST",
+          body: JSON.stringify({ match_id: matchId, game_number: 1 }),
+        });
+        setGames([gameRes.game]);
+        setPhase("coin_toss");
       } else {
-        setCurrentGameIdx(gamesData.length - 1);
-        setPhase("playing");
+        setGames(gamesData);
+        const lastGame = gamesData[gamesData.length - 1];
+        if (lastGame.status === "completed") {
+          setPhase("match_over");
+        } else {
+          setCurrentGameIdx(gamesData.length - 1);
+          setPhase("playing");
+        }
       }
-    }
 
-    await supabase.from("matches").update({ status: "playing" }).eq("id", matchId);
+      // Set match to playing
+      await api(`/api/matches/${matchId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "playing" }),
+      });
+    } catch (err) {
+      console.error("Load match error:", err);
+    }
+  }
+
+  async function startNextGame() {
+    const gameRes = await api(`/api/games/create`, {
+      method: "POST",
+      body: JSON.stringify({ match_id: matchId, game_number: currentGameIdx + 1 }),
+    });
+    setGames([...games, gameRes.game]);
+    setPhase("playing");
   }
 
   async function scorePoint(player: 1 | 2) {
@@ -99,34 +108,59 @@ export default function UmpirePadPage({
     const newScore2 = player === 2 ? score2 + 1 : score2;
 
     // Save undo state
-    setUndoStack([...undoStack, { gameId: currentGame.id, score1, score2, gameNumber: currentGame.game_number }]);
+    setUndoStack([...undoStack, {
+      gameId: currentGame.id,
+      score1, score2,
+      gameNumber: currentGame.game_number,
+      gameStatus: currentGame.status,
+      gameWinner: currentGame.winner_id,
+    }]);
 
     const result = checkGameOver(newScore1, newScore2, config);
 
     if (result.isGameOver) {
-      const winnerId = result.winner === "player1" ? "entry_1" : "entry_2";
-      const isMatchDone = checkMatchOver(
-        [...games.filter((g) => g.id !== currentGame.id), { ...currentGame, winner_id: winnerId, status: "completed" as const }].map((g) => ({
+      // FIX(#51-pad): send REAL entry uuid as winner_id (literal "entry_1" → PG uuid error → 500)
+      const winnerId = result.winner === "player1" ? match!.entry_1_id : match!.entry_2_id;
+      const prevGames = games
+        .filter((g) => g.id !== currentGame.id)
+        .map((g) => ({
           game_number: g.game_number,
-          winner: g.winner_id === "entry_1" ? "player1" as const : g.winner_id === "entry_2" ? "player2" as const : null,
-        })),
+          winner: g.winner_id === match!.entry_1_id ? "player1" as const : g.winner_id === match!.entry_2_id ? "player2" as const : null,
+        }));
+      const isMatchDone = checkMatchOver(
+        [...prevGames, {
+          game_number: currentGame.game_number,
+          winner: result.winner,
+        }],
         config
       );
 
       // Update current game as completed
-      await supabase.from("games").update({
-        score_entry_1: newScore1,
-        score_entry_2: newScore2,
-        status: "completed",
-        winner_id: winnerId,
-      }).eq("id", currentGame.id);
+      await api(`/api/games/update`, {
+        method: "POST",
+        body: JSON.stringify({
+          id: currentGame.id,
+          score_entry_1: newScore1,
+          score_entry_2: newScore2,
+          status: "completed",
+          winner_id: winnerId,
+        }),
+      });
 
-      setGames(games.map((g) => g.id === currentGame.id ? { ...g, score_entry_1: newScore1, score_entry_2: newScore2, status: "completed", winner_id: winnerId } : g));
+      setGames(games.map((g) =>
+        g.id === currentGame.id
+          ? { ...g, score_entry_1: newScore1, score_entry_2: newScore2, status: "completed", winner_id: winnerId }
+          : g
+      ));
 
       if (isMatchDone.isMatchOver) {
         const matchWinnerId = isMatchDone.winner === "player1" ? match!.entry_1_id : match!.entry_2_id;
-        await supabase.from("matches").update({ status: "completed", winner_id: matchWinnerId }).eq("id", matchId);
-        setMatch(m => m ? { ...m, status: "completed", winner_id: matchWinnerId } : m);
+        // FIX(#51-pad): API field is winner_entry_id (winner_id is ignored → winner never saved)
+        await api(`/api/matches/${matchId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "completed", winner_entry_id: matchWinnerId }),
+        });
+        setMatch(m => m ? { ...m, status: "completed", winner_entry_id: matchWinnerId } : m);
         setPhase("match_over");
       } else {
         setPhase("game_over");
@@ -134,13 +168,21 @@ export default function UmpirePadPage({
         setServeSide(serveSide === "left" ? "right" : "left");
       }
     } else {
-      await supabase.from("games").update({
-        score_entry_1: newScore1,
-        score_entry_2: newScore2,
-        current_server: player,
-      }).eq("id", currentGame.id);
+      await api(`/api/games/update`, {
+        method: "POST",
+        body: JSON.stringify({
+          id: currentGame.id,
+          score_entry_1: newScore1,
+          score_entry_2: newScore2,
+          current_server: player,
+        }),
+      });
 
-      setGames(games.map((g) => g.id === currentGame.id ? { ...g, score_entry_1: newScore1, score_entry_2: newScore2, current_server: player } : g));
+      setGames(games.map((g) =>
+        g.id === currentGame.id
+          ? { ...g, score_entry_1: newScore1, score_entry_2: newScore2, current_server: player }
+          : g
+      ));
     }
   }
 
@@ -149,29 +191,45 @@ export default function UmpirePadPage({
     const last = undoStack[undoStack.length - 1];
     setUndoStack(undoStack.slice(0, -1));
 
-    await supabase.from("games").update({
-      score_entry_1: last.score1,
-      score_entry_2: last.score2,
-      status: "playing",
-      winner_id: null,
-    }).eq("id", last.gameId);
+    await api(`/api/games/update`, {
+      method: "POST",
+      body: JSON.stringify({
+        id: last.gameId,
+        score_entry_1: last.score1,
+        score_entry_2: last.score2,
+        status: "playing",
+        winner_id: null,
+      }),
+    });
 
-    setGames(games.map((g) => g.id === last.gameId ? { ...g, score_entry_1: last.score1, score_entry_2: last.score2, status: "playing", winner_id: null } : g));
+    setGames(games.map((g) =>
+      g.id === last.gameId
+        ? { ...g, score_entry_1: last.score1, score_entry_2: last.score2, status: "playing", winner_id: null }
+        : g
+    ));
 
-    if (last.gameNumber !== currentGame!.game_number) {
+    // FIX(#51-pad): currentGame may be undefined between games — compare safely
+    if (last.gameNumber !== (currentGame?.game_number ?? -1)) {
       setCurrentGameIdx(last.gameNumber - 1);
-      setPhase("playing");
     }
     setPhase("playing");
   }
 
   async function handleFault(player: "entry_1" | "entry_2") {
-    await supabase.from("point_logs").insert({
-      game_id: currentGame!.id,
-      scoring_entry_id: player,
-      action: "fault",
+    if (!currentGame) return;
+    // FIX(#51-pad): send REAL entry uuid as scoring_entry_id (literal → PG uuid error → 500)
+    const entryId = player === "entry_1" ? match!.entry_1_id : match!.entry_2_id;
+    await api(`/api/point_logs`, {
+      method: "POST",
+      body: JSON.stringify({
+        game_id: currentGame.id,
+        match_id: matchId,
+        scoring_entry_id: entryId,
+        action: "fault",
+        point_type: "fault",
+      }),
     });
-    alert(`⚠️ Fault called on ${player === "entry_1" ? "Player 1" : "Player 2"}`);
+    alert(`⚠️ Fault called on ${player === "entry_1" ? name1 : name2}`);
   }
 
   async function handleCard(type: string) {
@@ -189,15 +247,21 @@ export default function UmpirePadPage({
   }
 
   async function executeCard(type: string) {
-    const playerId = "unknown";
-    await supabase.from("card_logs").insert({
-      match_id: matchId,
-      player_id: playerId,
-      card_type: type,
-      note: "",
+    const playerId = match?.entry_1_id || "unknown";
+    await api(`/api/card_logs`, {
+      method: "POST",
+      body: JSON.stringify({
+        match_id: matchId,
+        entry_id: playerId,
+        card_type: type,
+        reason: "",
+      }),
     });
     if (type === "red") {
-      await supabase.from("matches").update({ status: "completed" }).eq("id", matchId);
+      await api(`/api/matches/${matchId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "completed" }),
+      });
       setMatch(m => m ? { ...m, status: "completed" } : m);
       setPhase("match_over");
     }
@@ -223,14 +287,17 @@ export default function UmpirePadPage({
 
   // Game Over
   if (phase === "game_over") {
+    // FIX(#51-pad): show the game that JUST completed (currentGameIdx already advanced)
+    const justWon = games[currentGameIdx - 1] || currentGame;
+    const winnerName = (justWon?.score_entry_1 ?? 0) > (justWon?.score_entry_2 ?? 0) ? name1 : name2;
     return (
       <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
         <div className="text-6xl mb-4">🏅</div>
-        <h1 className="text-3xl font-black mb-2">Game {currentGameIdx} Over!</h1>
+        <h1 className="text-3xl font-black mb-2">Game {justWon?.game_number ?? currentGameIdx} Over!</h1>
         <p className="text-gray-400 mb-8">Starting Game {currentGameIdx + 1} of {config.best_of}</p>
-        <p className="text-4xl font-black text-emerald-400 mb-8">Player {score1 > score2 ? "1" : "2"} Wins</p>
+        <p className="text-4xl font-black text-emerald-400 mb-8">{winnerName} Wins</p>
         <div className="flex gap-4">
-          <button onClick={() => setPhase("playing")} className="bg-emerald-700 px-8 py-4 rounded-2xl text-xl font-bold hover:bg-emerald-600">
+          <button onClick={startNextGame} className="bg-emerald-700 px-8 py-4 rounded-2xl text-xl font-bold hover:bg-emerald-600">
             Next Game →
           </button>
           <button onClick={handleUndo} className="bg-gray-700 px-8 py-4 rounded-2xl text-xl font-bold hover:bg-gray-600">
@@ -243,7 +310,10 @@ export default function UmpirePadPage({
 
   // Match Over
   if (phase === "match_over") {
-    const winner = match.winner_id === match.entry_1_id ? "Player 1" : "Player 2";
+    // FIX(#51-pad): API field is winner_entry_id; fall back to games tally if not set
+    const winner = match.winner_entry_id
+      ? (match.winner_entry_id === match.entry_1_id ? name1 : name2)
+      : (p1Wins > p2Wins ? name1 : name2);
     return (
       <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
         <div className="text-6xl mb-4">🏆</div>
@@ -279,7 +349,7 @@ export default function UmpirePadPage({
         {/* Player 1 */}
         <button onClick={() => scorePoint(1)} className="w-full max-w-md bg-emerald-800/50 rounded-3xl p-6 text-center hover:bg-emerald-700/50 active:scale-95 transition-all">
           <p className="text-gray-400 text-sm mb-2">{serveSide === "left" ? "← Left Court" : "Right Court →"}</p>
-          <p className="text-2xl font-medium text-emerald-200">Player 1</p>
+          <p className="text-2xl font-medium text-emerald-200">{name1}</p>
           <p className="text-8xl font-black text-white mt-4">{score1}</p>
         </button>
 
@@ -294,7 +364,7 @@ export default function UmpirePadPage({
         {/* Player 2 */}
         <button onClick={() => scorePoint(2)} className="w-full max-w-md bg-blue-800/50 rounded-3xl p-6 text-center hover:bg-blue-700/50 active:scale-95 transition-all">
           <p className="text-gray-400 text-sm mb-2">{serveSide === "left" ? "Right Court →" : "← Left Court"}</p>
-          <p className="text-2xl font-medium text-blue-200">Player 2</p>
+          <p className="text-2xl font-medium text-blue-200">{name2}</p>
           <p className="text-8xl font-black text-white mt-4">{score2}</p>
         </button>
 
