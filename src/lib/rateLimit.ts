@@ -35,8 +35,13 @@ export function clearRateLimit(key: string): void {
   buckets.delete(key);
 }
 
+// SECURITY (2026-08-07, Mike): never trust client-supplied x-forwarded-for.
+// Apache front does NOT set/overwrite XFF (mod_remoteip loaded but not enabled),
+// so any attacker can spoof XFF to bypass IP rate limits (verified exploitable).
+// Use x-real-ip when the proxy sets it; otherwise fall back to a constant so
+// per-IP buckets collapse (email-keyed limits still protect login).
 export function clientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
+  const real = req.headers.get("x-real-ip");
+  if (real && real.trim()) return real.trim();
   return "unknown";
 }

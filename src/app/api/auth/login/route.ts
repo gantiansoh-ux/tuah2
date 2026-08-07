@@ -13,9 +13,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
-    // Rate limit: 5 failed attempts per 15 min per IP+email
+    // Rate limit (SECURITY fix 2026-08-07): key on EMAIL first so spoofed
+    // X-Forwarded-For can't bypass the per-account lockout (verified exploitable
+    // before fix). IP is a secondary bucket only when it is a real proxy-set IP.
+    const emailKey = email.trim().toLowerCase();
     const ip = clientIp(req);
-    const rlKey = `login:${ip}:${email.trim().toLowerCase()}`;
+    const rlKey = ip === 'unknown' ? `login:${emailKey}` : `login:${ip}:${emailKey}`;
     const rl = checkRateLimit(rlKey, 5, 15 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json(
