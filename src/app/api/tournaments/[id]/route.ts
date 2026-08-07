@@ -197,6 +197,10 @@ export async function DELETE(
         [id]
       );
       await client.query(
+        `DELETE FROM card_logs WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query(
         `DELETE FROM games WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
         [id]
       );
@@ -205,7 +209,17 @@ export async function DELETE(
         `DELETE FROM entries WHERE category_id IN (SELECT id FROM categories WHERE tournament_id = $1)`,
         [id]
       );
+      // BUG-006 (2026-08-07): tournament_registrations.category_id -> categories
+      // has NO cascade - delete registrations BEFORE categories (matches the
+      // tournament_id cascade which would already remove most, but category-level
+      // ones (by tournament) must go explicitly).
+      await client.query(
+        `DELETE FROM tournament_registrations WHERE tournament_id = $1`,
+        [id]
+      );
       await client.query("DELETE FROM categories WHERE tournament_id = $1", [id]);
+      // umpire_reviews.tournament_id has NO cascade either - delete before tournament.
+      await client.query("DELETE FROM umpire_reviews WHERE tournament_id = $1", [id]);
       await client.query("DELETE FROM tournaments WHERE id = $1", [id]);
       await client.query('COMMIT');
     } catch (txErr) {
