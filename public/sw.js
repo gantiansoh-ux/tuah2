@@ -1,5 +1,5 @@
 /* TUAH Service Worker v2 - cache-busted via BUILD_ID (auto-updates on every deploy) */
-const CACHE_NAME = "tuah-" + "E_dyTx7FvSppJQkTvBfAl";
+const CACHE_NAME = "tuah-" + "7iNJdN4Hd_jrA55Ghyyfz";
 const APP_SHELL = [
   "/icon-192.png",
   "/icon-512.png",

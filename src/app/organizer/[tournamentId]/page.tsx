@@ -628,7 +628,7 @@ export default function TournamentDetailPage({
                       {publishing ? "..." : "Publish"}
                     </button>
                   )}
-                  {(tournament.status === "registration" || tournament.status === "published") && entries.length >= 2 && (
+                  {(tournament.status === "registration" || tournament.status === "published" || tournament.status === "in_progress") && entries.length >= 2 && (
                     <button onClick={generateDraw} disabled={generatingDraw}
                       className="bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 disabled:opacity-50">
                       {generatingDraw ? "..." : "🎲 Generate Draw"}
@@ -887,7 +887,7 @@ export default function TournamentDetailPage({
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">Draw / Bracket</h2>
               <div className="flex gap-2">
-                {isOwner && (tournament.status === "registration" || tournament.status === "published") && entries.length >= 2 && (
+                {isOwner && (tournament.status === "registration" || tournament.status === "published" || tournament.status === "in_progress") && entries.length >= 2 && (
                   <>
                     <button onClick={() => setShowDrawOptions(!showDrawOptions)}
                       className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
@@ -1037,7 +1037,7 @@ export default function TournamentDetailPage({
                 {entries.length >= 2 && isOwner && tournament.status === "draft" && (
                   <p className="text-sm mt-1 text-yellow-600">Publish the tournament first, then generate the draw.</p>
                 )}
-                {entries.length >= 2 && isOwner && (tournament.status === "registration" || tournament.status === "published") && (
+                {entries.length >= 2 && isOwner && (tournament.status === "registration" || tournament.status === "published" || tournament.status === "in_progress") && (
                   <p className="text-sm mt-2 text-gray-500">Select a draw format above and click Generate.</p>
                 )}
               </div>
