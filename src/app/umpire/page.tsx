@@ -88,7 +88,10 @@ export default function UmpireDashboardPage() {
     }
   }
 
-  if (authLoading || loading) {
+  // BUG-008 fix (2026-08-07): spinner must only wait for auth resolution.
+  // Previously `loading` (initial true) never resolved for unauth users because
+  // loadAll() only ran when user existed -> infinite spinner, Sign In unreachable.
+  if (authLoading || (user && loading)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full" />
