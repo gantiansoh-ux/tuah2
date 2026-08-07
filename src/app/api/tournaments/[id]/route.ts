@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query, queryOne, queryAll } from "@/lib/db";
+import { getPool, query, queryOne, queryAll } from "@/lib/db";
 
 // GET /api/tournaments/[id] - load tournament + categories + entries + matches
 // Public endpoint - no auth required (audience portal, spectators)
@@ -169,8 +169,51 @@ export async function DELETE(
       return NextResponse.json({ error: "Tournament not found or not yours" }, { status: 403 });
     }
 
-    // Delete (cascades to categories, entries, matches, games, etc.)
-    await query("DELETE FROM tournaments WHERE id = $1", [id]);
+    // BUG-004 fix (2026-08-07): explicit FK-safe cascade. challenges has NO
+    // ON DELETE CASCADE, so naive tournament delete 500s on challenges_match_id_fkey.
+    // Order: challenges -> point_logs -> games -> matches -> entries -> categories -> tournament.
+    const pool = getPool();
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // BUG-004 (2026-08-07): challenges <-> point_logs have a CIRCULAR FK
+      // (point_logs.challenge_id -> challenges.id AND challenges.point_log_id -> point_logs.id),
+      // neither with CASCADE. NULL out both refs first, then delete children in
+      // FK-safe order, then games/matches/entries/categories/tournament.
+      await client.query(
+        `UPDATE challenges SET point_log_id = NULL WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query(
+        `UPDATE point_logs SET challenge_id = NULL WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query(
+        `DELETE FROM point_logs WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query(
+        `DELETE FROM challenges WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query(
+        `DELETE FROM games WHERE match_id IN (SELECT id FROM matches WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query("DELETE FROM matches WHERE tournament_id = $1", [id]);
+      await client.query(
+        `DELETE FROM entries WHERE category_id IN (SELECT id FROM categories WHERE tournament_id = $1)`,
+        [id]
+      );
+      await client.query("DELETE FROM categories WHERE tournament_id = $1", [id]);
+      await client.query("DELETE FROM tournaments WHERE id = $1", [id]);
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {

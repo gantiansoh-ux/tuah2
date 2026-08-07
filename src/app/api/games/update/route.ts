@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query, queryOne } from "@/lib/db";
+import { getPool, query, queryOne } from "@/lib/db";
 import { canControlMatch } from "@/lib/matchAuth";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Permission check: resolve the game's match, then verify control rights
-    const game = await queryOne(`SELECT match_id FROM games WHERE id = $1`, [id]);
+    const game = await queryOne(`SELECT match_id, score_1, score_2, is_complete FROM games WHERE id = $1`, [id]);
+    if (!game) {
+      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+    }
+    const matchRow = await queryOne(`SELECT entry_1_id, entry_2_id FROM matches WHERE id = $1`, [game.match_id]);
     if (!game) {
       return NextResponse.json({ error: "Game not found" }, { status: 404 });
     }
@@ -67,12 +71,54 @@ export async function POST(req: NextRequest) {
 
     values.push(id);
 
-    const result = await query(
-      `UPDATE games SET ${sets.join(", ")}, updated_at = now() WHERE id = $${idx} RETURNING *`,
-      values
-    );
+    // BUG-003 fix (2026-08-07): pad scoring must write the point_logs ledger
+    // so challenges can reference the contested point (Post-Game Undo).
+    // Deltas computed against previous persisted scores, then ONE transaction:
+    // UPDATE games + INSERT point_logs for each added point.
+    const prevS1 = game.score_1 ?? 0;
+    const prevS2 = game.score_2 ?? 0;
+    const newS1 = score_entry_1 !== undefined ? score_entry_1 : prevS1;
+    const newS2 = score_entry_2 !== undefined ? score_entry_2 : prevS2;
+    const delta1 = Math.max(0, (newS1 ?? 0) - prevS1);
+    const delta2 = Math.max(0, (newS2 ?? 0) - prevS2);
 
-    const g = result.rows[0];
+    const pool = getPool();
+    const client = await pool.connect();
+    let g: any = null;
+    try {
+      await client.query('BEGIN');
+      const upd = await client.query(
+        `UPDATE games SET ${sets.join(", ")}, updated_at = now() WHERE id = $${idx} RETURNING *`,
+        values
+      );
+      g = upd.rows[0];
+
+      // ledger: one point_log per added point (normal type, attributed to entry)
+      const pointEntries: Array<{ entryId: string | null; playerNumber: number; count: number }> = [];
+      if (delta1 > 0 && matchRow?.entry_1_id) pointEntries.push({ entryId: matchRow.entry_1_id, playerNumber: 1, count: delta1 });
+      if (delta2 > 0 && matchRow?.entry_2_id) pointEntries.push({ entryId: matchRow.entry_2_id, playerNumber: 2, count: delta2 });
+      if (pointEntries.length > 0) {
+        const cnt = await client.query(`SELECT COUNT(*)::int AS c FROM point_logs WHERE game_id = $1`, [id]);
+        let pointNumber = (cnt.rows[0]?.c ?? 0) + 1;
+        for (const pe of pointEntries) {
+          for (let k = 0; k < pe.count; k++) {
+            await client.query(
+              `INSERT INTO point_logs (game_id, match_id, point_number, scoring_entry_id, point_type, player_number)
+               VALUES ($1, $2, $3, $4, 'normal', $5)`,
+              [id, game.match_id, pointNumber, pe.entryId, pe.playerNumber]
+            );
+            pointNumber += 1;
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
     return NextResponse.json({
       game: {
         id: g.id,
