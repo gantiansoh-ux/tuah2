@@ -76,6 +76,15 @@ export async function PATCH(
     let body;
     try { body = await req.json(); } catch { body = {}; }
 
+    // P1-006: validate number_of_courts (integer 1-20) before update
+    if (body.number_of_courts !== undefined || body.numberOfCourts !== undefined) {
+      const raw = body.number_of_courts ?? body.numberOfCourts;
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1 || n > 20) {
+        return NextResponse.json({ error: "number_of_courts must be an integer between 1 and 20" }, { status: 400 });
+      }
+    }
+
     // Map allowed fields (supports both camelCase and snake_case, maps to DB column names)
     const fieldMap: Record<string, string> = {
       title: "title", name: "title",
@@ -83,6 +92,7 @@ export async function PATCH(
       venue: "venue", location: "venue",
       start_date: "start_date", startDate: "start_date",
       end_date: "end_date", endDate: "end_date",
+      number_of_courts: "number_of_courts", numberOfCourts: "number_of_courts",
       registration_deadline: "registration_deadline", registration_close: "registration_deadline", regClose: "registration_deadline",
       registration_open: "registration_open", regOpen: "registration_open",
     };

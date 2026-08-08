@@ -103,6 +103,67 @@ function Modal({ children, onClose, title }: { children: React.ReactNode; onClos
 // ————————————————————————————————————————————
 // PAGE COMPONENT
 // ————————————————————————————————————————————
+// P1-006: inline court/time editor for a single match (organizer only)
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function MatchCourtEditor({ match, onSaved }: { match: any; onSaved: () => void }) {
+  const [court, setCourt] = useState<string>(match.court_number ? String(match.court_number) : "");
+  const [time, setTime] = useState<string>(match.scheduled_time ? toLocalInput(match.scheduled_time) : "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    setSaving(true);
+    setErr("");
+    const body: any = {};
+    if (court.trim() !== "") body.court_number = parseInt(court, 10);
+    if (time.trim() !== "") body.scheduled_time = new Date(time).toISOString();
+    if (Object.keys(body).length === 0) {
+      setSaving(false);
+      return;
+    }
+    const res = await fetch(`/api/matches/${match.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setErr(data.error || "Failed to save");
+    } else {
+      onSaved();
+    }
+    setSaving(false);
+  }
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <input
+        type="number" min={1} max={20} value={court}
+        onChange={(e) => setCourt(e.target.value)}
+        placeholder="Court"
+        className="w-16 text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500"
+      />
+      <input
+        type="datetime-local" value={time}
+        onChange={(e) => setTime(e.target.value)}
+        className="text-xs border border-gray-200 rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-emerald-500"
+      />
+      <button
+        type="button" onClick={save} disabled={saving}
+        className="text-xs bg-gray-800 text-white px-2 py-1 rounded-lg hover:bg-gray-700 disabled:opacity-50"
+      >
+        {saving ? "..." : "Save"}
+      </button>
+      {err && <span className="text-xs text-red-500">{err}</span>}
+    </span>
+  );
+}
+
 export default function TournamentDetailPage({
   params,
 }: {
@@ -142,7 +203,7 @@ export default function TournamentDetailPage({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // —— Form states ——
-  const [editForm, setEditForm] = useState({ title: "", description: "", venue: "", start_date: "", end_date: "" });
+  const [editForm, setEditForm] = useState({ title: "", description: "", venue: "", start_date: "", end_date: "", number_of_courts: 4 });
   const [catForm, setCatForm] = useState({ name: "", gender: "male", age: "Open", type: "singles", points: 21, bestOf: 3, deuce: true, format: "knockout" });
   const [importCSV, setImportCSV] = useState("");
   const [importCat, setImportCat] = useState("");
@@ -152,6 +213,9 @@ export default function TournamentDetailPage({
   const [addPlayerStatus, setAddPlayerStatus] = useState("");
   const [generatingDraw, setGeneratingDraw] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  // P1-006: auto-schedule state
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleMsg, setScheduleMsg] = useState("");
   const [editingSeeds, setEditingSeeds] = useState<Record<string, number | ''>>({});
 
   // Name editing state
@@ -225,6 +289,7 @@ export default function TournamentDetailPage({
       venue: tournament.venue || "",
       start_date: fmtLocalDate(tournament.start_date),
       end_date: fmtLocalDate(tournament.end_date),
+      number_of_courts: tournament.number_of_courts || 4,
     });
     setShowEdit(true);
   }
@@ -324,6 +389,27 @@ export default function TournamentDetailPage({
       setTournament(data.tournament);
     }
     setPublishing(false);
+  }
+
+  // P1-006: auto-schedule all empty slots (POST /api/tournaments/[id]/schedule)
+  async function autoSchedule() {
+    setScheduling(true);
+    setScheduleMsg("");
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Schedule failed");
+      setScheduleMsg(`Scheduled ${data.scheduled} match(es); ${data.skipped} already had a time`);
+      await loadAll();
+    } catch (err: any) {
+      setScheduleMsg("Error: " + (err.message || "schedule failed"));
+    } finally {
+      setScheduling(false);
+    }
   }
 
   async function generateDraw() {
@@ -1331,6 +1417,18 @@ export default function TournamentDetailPage({
         {activeTab === "matches" && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Live Matches</h2>
+            {isOwner && (
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <button
+                  onClick={autoSchedule}
+                  disabled={scheduling}
+                  className="text-sm bg-emerald-700 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 disabled:opacity-50"
+                >
+                  {scheduling ? "Scheduling..." : "Auto Schedule"}
+                </button>
+                {scheduleMsg && <span className="text-xs text-gray-500">{scheduleMsg}</span>}
+              </div>
+            )}
             {matches.filter((m: any) => m.status === "playing" || m.status === "scheduled").length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 <div className="text-4xl mb-2">🎯</div>
@@ -1377,7 +1475,10 @@ export default function TournamentDetailPage({
                                 ))}
                               </select>
                             )}
-                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">👤 {m.umpire_id}</span>}
+                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">
+                            {isOwner && (
+                              <MatchCourtEditor match={m} onSaved={loadAll} />
+                            )}👤 {m.umpire_id}</span>}
                           </div>
                           <Link href={`/umpire/v2/${m.id}`}
                             className="text-sm bg-emerald-700 text-white px-4 py-2 rounded-lg hover:bg-emerald-600">
@@ -1648,6 +1749,12 @@ export default function TournamentDetailPage({
                 <input type="date" value={editForm.end_date} onChange={(e) => setEditForm({ ...editForm, end_date: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Number of Courts</label>
+              <input type="number" min={1} max={20} value={editForm.number_of_courts}
+                onChange={(e) => setEditForm({ ...editForm, number_of_courts: parseInt(e.target.value) || 4 })}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none" />
             </div>
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={() => setShowEdit(false)}

@@ -65,6 +65,9 @@ export async function POST(req: NextRequest) {
     const prize = body.prize || null;
     const entryFee = body.entryFee || body.entry_fee || 0;
     const categories = Array.isArray(body.categories) ? body.categories : [];
+    // P1-006: number_of_courts (1-20, default 4)
+    const rawCourts = body.number_of_courts ?? body.numberOfCourts ?? 4;
+    const number_of_courts = rawCourts === null || rawCourts === undefined || rawCourts === "" ? 4 : Number(rawCourts);
 
     console.log("PARSED FIELDS:", JSON.stringify({name, description, location, startDate, endDate, regClose, status}));
 
@@ -93,6 +96,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "endDate is required" }, { status: 400 });
     }
 
+    // P1-006: validate number_of_courts (integer 1-20) before any insert
+    if (!Number.isInteger(number_of_courts) || number_of_courts < 1 || number_of_courts > 20) {
+      return NextResponse.json({ error: "number_of_courts must be an integer between 1 and 20" }, { status: 400 });
+    }
+
     if (!status) {
       console.log("WARN: status is falsy, using 'draft'");
     }
@@ -116,10 +124,10 @@ export async function POST(req: NextRequest) {
 
       // Create tournament
       const tResult = await client.query(
-        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, registration_open, status, tournament_type, poster_url, banner_url, logo_url, rules, prize, entry_fee)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, registration_open, status, tournament_type, poster_url, banner_url, logo_url, rules, prize, entry_fee, number_of_courts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING *`,
-        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, regOpen, status || "draft", tournamentType, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee]
+        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, regOpen, status || "draft", tournamentType, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee, number_of_courts]
       );
 
       const tournament = tResult.rows[0];

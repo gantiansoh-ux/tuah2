@@ -200,6 +200,9 @@ export default function CreateTournamentPage() {
   const [endDate, setEndDate] = useState("");
   const [registrationDeadline, setRegistrationDeadline] = useState("");
 
+  // P1-006: number of courts (1-20, default 4)
+  const [numberOfCourts, setNumberOfCourts] = useState(4);
+
   // Categories
   const [categories, setCategories] = useState<WizardCategory[]>([newCat()]);
 
@@ -260,6 +263,7 @@ export default function CreateTournamentPage() {
           rules: rules.trim() || null,
           prize: prize.trim() || null,
           entryFee: entryFee || 0,
+          number_of_courts: numberOfCourts,
           registrationDeadline: registrationDeadline || null,
           categories,
         }),
@@ -393,6 +397,20 @@ export default function CreateTournamentPage() {
             </div>
             <div>
               <VenuePicker value={venueData} onChange={setVenueData} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Number of Courts
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={numberOfCourts}
+                onChange={(e) => setNumberOfCourts(parseInt(e.target.value) || 4)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-emerald-500 outline-none"
+              />
+              <p className="text-xs text-gray-400 mt-1">1-20 courts. Used by the draw and auto-schedule.</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

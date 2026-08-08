@@ -116,6 +116,32 @@ export async function PATCH(
     const authCheck = await canControlMatch(payload.userId, payload.role, id);
     if (!authCheck.ok) return authCheck.response;
 
+    // P1-006: court+time conflict guard. When both court_number and scheduled_time
+    // are being set, reject if another match in the SAME tournament already holds
+    // the same court at the same time slot (discrete slots => equality = overlap).
+    const bodyCourt = body.court_number ?? body.courtNumber;
+    const bodyTime = body.scheduled_time ?? body.scheduledTime;
+    if (bodyCourt !== undefined && bodyTime !== undefined) {
+      const cur = await queryOne(
+        `SELECT tournament_id FROM matches WHERE id = $1`,
+        [id]
+      );
+      if (cur?.tournament_id) {
+        const clash = await queryOne(
+          `SELECT id, match_number, court_number, scheduled_time FROM matches
+           WHERE tournament_id = $1 AND court_number = $2 AND scheduled_time = $3 AND id != $4
+           LIMIT 1`,
+          [cur.tournament_id, Number(bodyCourt), new Date(String(bodyTime)).toISOString(), id]
+        );
+        if (clash) {
+          return NextResponse.json(
+            { error: "Court already scheduled at this time (conflict with match " + clash.match_number + ")" },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
     const allowedFields: Record<string, string> = {
       status: "status",
       winner_id: "winner_entry_id",
