@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { tournament_id, name, type, gender, scoring_config, format } = body;
+    const { tournament_id, name, type, gender, scoring_config, format, max_entries } = body;
 
     if (!tournament_id || !name) {
       return NextResponse.json({ error: "tournament_id and name are required" }, { status: 400 });
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       `INSERT INTO categories (tournament_id, name, type, gender, scoring_config, max_entries)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [tournament_id, name, type || "singles", normalizedGender, JSON.stringify(sc), type === "doubles" ? 32 : 64]
+      [tournament_id, name, type || "singles", normalizedGender, JSON.stringify(sc), max_entries || (type === "doubles" ? 32 : 64)]
     );
 
     return NextResponse.json({ category: result.rows[0] }, { status: 201 });

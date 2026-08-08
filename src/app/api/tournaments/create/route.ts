@@ -116,10 +116,10 @@ export async function POST(req: NextRequest) {
 
       // Create tournament
       const tResult = await client.query(
-        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, status, tournament_type, poster_url, banner_url, logo_url, rules, prize, entry_fee)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, registration_open, status, tournament_type, poster_url, banner_url, logo_url, rules, prize, entry_fee)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
          RETURNING *`,
-        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, status || "draft", tournamentType, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee]
+        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, regOpen, status || "draft", tournamentType, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee]
       );
 
       const tournament = tResult.rows[0];

@@ -257,7 +257,7 @@
 - Frontend: `m.court_name` 和 DB matches 的 `court_number`(integer) 不匹配
 - Draw tab 显示 `{m.court_name || ""}`，但表里没有 court_name 列
 - Live Matches tab 也用 `m.court_name`
-- [2026-08-08 FIXED] ALTER TABLE matches ADD COLUMN court_name text applied to live DB; PATCH /api/matches/{id} with court_name verified 200 and persisted (BUG-010). self_hosted_schema.sql aligned.
+- [2026-08-08 FIXED] ALTER TABLE matches ADD COLUMN court_name text applied to live DB; PATCH /api/matches/{id} with court_name verified 200 and persisted (BUG-011). self_hosted_schema.sql aligned.
 
 #### Q18: 没有 TypeScript strict mode 使用
 - 多处用 `any`，没有 strict null checks
