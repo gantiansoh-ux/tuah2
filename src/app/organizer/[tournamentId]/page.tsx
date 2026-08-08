@@ -1475,10 +1475,10 @@ export default function TournamentDetailPage({
                                 ))}
                               </select>
                             )}
-                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">
+                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">👤 {m.umpire_id}</span>}
                             {isOwner && (
                               <MatchCourtEditor match={m} onSaved={loadAll} />
-                            )}👤 {m.umpire_id}</span>}
+                            )}
                           </div>
                           <Link href={`/umpire/v2/${m.id}`}
                             className="text-sm bg-emerald-700 text-white px-4 py-2 rounded-lg hover:bg-emerald-600">
