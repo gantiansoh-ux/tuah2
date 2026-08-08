@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query, queryAll, queryOne } from "@/lib/db";
 
-// POST /api/tournaments/[id]/schedule — P1-006 auto court + time scheduling
+// POST /api/tournaments/[id]/schedule â€” P1-006 auto court + time scheduling
 //
 // APPROVED SCOPE (Gan 2026-08-08): uses ONLY existing columns
 //   matches.court_number / matches.scheduled_time / tournaments.number_of_courts.
@@ -35,7 +35,7 @@ export async function POST(
     );
     if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
     if (tournament.organizer_id !== payload.userId && payload.role !== 'admin') {
-      return NextResponse.json({ error: "Forbidden — not your tournament" }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden â€” not your tournament" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));
@@ -49,9 +49,24 @@ export async function POST(
     }
 
     // Base start time: explicit body.start_time (ISO or "HH:MM") > registration_deadline (future) > start_date 09:00 +08 > now
-    // pg returns DATE as a JS Date (UTC midnight) - normalize to YYYY-MM-DD first
-    const rawStart = tournament.start_date;
-    const startDateStr = rawStart instanceof Date ? rawStart.toISOString().slice(0, 10) : String(rawStart).slice(0, 10);
+    // BUG-NEW-01/#36: pg returns Postgres DATE as a JS Date at server-local midnight (+08).
+    // .toISOString() shifts to UTC -> previous calendar day (off-by-one). Extract the
+    // calendar date in Asia/Kuala_Lumpur (+08) explicitly. No server-TZ change.
+    const toLocalDateStr = (v: unknown): string => {
+      if (!v) return "";
+      const d = v instanceof Date ? v : new Date(String(v));
+      if (isNaN(d.getTime())) return String(v).slice(0, 10);
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kuala_Lumpur",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(d);
+      const p: Record<string, string> = {};
+      for (const part of parts) p[part.type] = part.value;
+      return `${p.year}-${p.month}-${p.day}`;
+    };
+    const startDateStr = toLocalDateStr(tournament.start_date);
     let baseTime: Date;
     const explicitStart = body.start_time ?? body.startTime;
     if (explicitStart) {
@@ -94,7 +109,7 @@ export async function POST(
       });
     }
 
-    // Occupied (court, time) set from existing assignments — conflict detection
+    // Occupied (court, time) set from existing assignments â€” conflict detection
     const used = new Set<string>();
     for (const m of allMatches) {
       if (m.scheduled_time) {
