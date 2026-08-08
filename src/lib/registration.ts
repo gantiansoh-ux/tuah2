@@ -12,6 +12,10 @@ import { queryOne } from "@/lib/db";
 //   ② now is outside [registration_open, registration_deadline]
 //      (unset bounds are ignored for backward compatibility)
 //   ③ the category has reached max_entries (approved + pending count)
+//
+// BUG-012 (2026-08-08): checkCategoryCapacity() also gates organizer
+//   APPROVAL paths (PATCH tournament_registrations/[id],
+//   PATCH entries/[id]) so capacity cannot be bypassed by approval.
 // ============================================================
 
 export interface RegistrationGateResult {
@@ -52,30 +56,52 @@ export async function checkRegistrationAllowed(
     return { allowed: false, status: 409, error: "Registration has closed" };
   }
 
-  // ③ capacity gate: approved + pending entries < max_entries (only when max_entries > 0)
+  // ③ capacity gate
   if (categoryId) {
-    const cat = await queryOne(
-      `SELECT id, max_entries FROM categories WHERE id = $1 AND tournament_id = $2`,
-      [categoryId, tournamentId]
-    );
-    if (!cat) {
-      return { allowed: false, status: 400, error: "Category not found in this tournament" };
-    }
-    const maxEntries = cat.max_entries == null ? 0 : Number(cat.max_entries);
-    if (maxEntries > 0) {
-      const cnt = await queryOne(
-        `SELECT COUNT(*)::int AS n FROM entries
-         WHERE category_id = $1 AND registration_status IN ('approved', 'pending')`,
-        [categoryId]
-      );
-      if (Number(cnt.n) >= maxEntries) {
-        return {
-          allowed: false,
-          status: 409,
-          error: "This category is full (max entries reached)",
-        };
-      }
-    }
+    return checkCategoryCapacity(categoryId, { tournamentId });
+  }
+
+  return { allowed: true };
+}
+
+// Capacity gate shared by registration POST paths AND organizer approval
+// PATCH paths (BUG-012). Counts approved + pending entries; when
+// max_entries > 0 and count (minus the entry being approved, if any)
+// already reaches max, the operation is rejected with 409.
+export async function checkCategoryCapacity(
+  categoryId: string,
+  opts: { tournamentId?: string; excludeEntryId?: string } = {}
+): Promise<RegistrationGateResult> {
+  const catParams: any[] = [categoryId];
+  let catWhere = `WHERE id = $1`;
+  if (opts.tournamentId) {
+    catParams.push(opts.tournamentId);
+    catWhere += ` AND tournament_id = $${catParams.length}`;
+  }
+  const cat = await queryOne(`SELECT id, max_entries FROM categories ${catWhere}`, catParams);
+  if (!cat) {
+    return { allowed: false, status: 400, error: "Category not found" };
+  }
+
+  const maxEntries = cat.max_entries == null ? 0 : Number(cat.max_entries);
+  if (maxEntries <= 0) {
+    return { allowed: true };
+  }
+
+  const cntParams: any[] = [categoryId];
+  let cntSql = `SELECT COUNT(*)::int AS n FROM entries
+                WHERE category_id = $1 AND registration_status IN ('approved', 'pending')`;
+  if (opts.excludeEntryId) {
+    cntParams.push(opts.excludeEntryId);
+    cntSql += ` AND id != $${cntParams.length}`;
+  }
+  const cnt = await queryOne(cntSql, cntParams);
+  if (Number(cnt.n) >= maxEntries) {
+    return {
+      allowed: false,
+      status: 409,
+      error: "This category is full (max entries reached)",
+    };
   }
 
   return { allowed: true };

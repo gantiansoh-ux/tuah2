@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query, queryOne, queryAll } from "@/lib/db";
+import { checkCategoryCapacity } from "@/lib/registration";
 
 // GET /api/entries/[id] - get a specific entry
 export async function GET(
@@ -73,6 +74,14 @@ export async function PATCH(
     // Handle special case: approving auto-sets confirmed_at
     if (body.registration_status === 'approved') {
       delete body.confirmed_at;
+    }
+
+    // BUG-012: capacity gate on approval (exclude this entry — already counted as pending)
+    if (body.registration_status === 'approved') {
+      const cap = await checkCategoryCapacity(entry.category_id, { excludeEntryId: entry.id });
+      if (!cap.allowed) {
+        return NextResponse.json({ error: cap.error }, { status: cap.status });
+      }
     }
 
     const sets: string[] = [];

@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
                 deuce_cap: 30,
                 serve_switch: 5,
               }),
-              cat.type === "doubles" ? 32 : 64,
+              cat.maxEntries ?? cat.max_entries ?? (cat.type === "doubles" ? 32 : 64),
             ]
           );
         }

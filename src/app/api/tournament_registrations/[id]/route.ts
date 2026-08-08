@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query, queryOne } from "@/lib/db";
+import { checkCategoryCapacity } from "@/lib/registration";
 
 // GET /api/tournament_registrations/[id] - Get a specific registration
 export async function GET(
@@ -80,6 +81,14 @@ export async function PATCH(
             `SELECT id FROM entries WHERE category_id = $1 AND player_1_id = $2 LIMIT 1`,
             [reg.category_id, reg.profile_id]
           );
+          // BUG-012: capacity gate before creating/finalizing the entry
+          const cap = await checkCategoryCapacity(
+            reg.category_id,
+            { excludeEntryId: dup.rows.length > 0 ? dup.rows[0].id : undefined }
+          );
+          if (!cap.allowed) {
+            return NextResponse.json({ error: cap.error }, { status: cap.status });
+          }
           if (dup.rows.length === 0) {
             await query(
               `INSERT INTO entries (category_id, player_1_id, registration_status, confirmed_at)
