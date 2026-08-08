@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, queryOne } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
+import { checkRegistrationAllowed } from "@/lib/registration";
 
 // POST /api/public_registrations - Create a new player registration (public, no auth)
 export async function POST(req: NextRequest) {
@@ -56,6 +57,12 @@ export async function POST(req: NextRequest) {
 
     if (!category) {
       return NextResponse.json({ error: "Category not found in this tournament" }, { status: 400 });
+    }
+
+    // Registration gate: tournament status, window, category capacity (BUG-010-reg)
+    const gate = await checkRegistrationAllowed(tournament_id, category_id);
+    if (!gate.allowed) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
     }
 
     // For doubles, partner_name is required if no player_2_id

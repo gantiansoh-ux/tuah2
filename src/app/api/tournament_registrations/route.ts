@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { checkRegistrationAllowed } from "@/lib/registration";
 
 // GET /api/tournament_registrations?tournament_id=xxx
 export async function GET(req: NextRequest) {
@@ -39,6 +40,12 @@ export async function POST(req: NextRequest) {
   try {
     const { tournament_id, category_id } = await req.json();
     if (!tournament_id) return NextResponse.json({ error: "tournament_id required" }, { status: 400 });
+
+    // Registration gate: tournament existence, status, window, category capacity (BUG-010-reg)
+    const gate = await checkRegistrationAllowed(tournament_id, category_id || null);
+    if (!gate.allowed) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
+    }
 
     const existing = await query(
       `SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND profile_id = $2 AND status IN ('pending', 'approved')`,

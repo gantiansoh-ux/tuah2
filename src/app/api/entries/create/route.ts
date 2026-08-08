@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query, queryOne } from "@/lib/db";
+import { checkRegistrationAllowed } from "@/lib/registration";
 
 export async function POST(req: NextRequest) {
   const cookie = req.cookies.get(getCookieName())?.value;
@@ -24,6 +25,12 @@ export async function POST(req: NextRequest) {
     );
     if (!catCheck) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
+    }
+
+    // Registration gate: tournament status, window, category capacity (BUG-010-reg)
+    const gate = await checkRegistrationAllowed(catCheck.tournament_id, category_id);
+    if (!gate.allowed) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status });
     }
 
     // Security: only self-registration is allowed
