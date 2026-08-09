@@ -107,6 +107,8 @@ export default function OrganizerDashboard() {
   const skipSearchEffect = useRef(true);
   // #47: suppress search-debounce replay caused by URL-restore setSearch
   const isRestoring = useRef(false);
+  // #46: latest-value ref so a late debounce fetch never uses a stale statusFilter
+  const statusFilterRef = useRef("");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -134,6 +136,11 @@ export default function OrganizerDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // Keep statusFilterRef current (debounce callback reads it, not closure)
+  useEffect(() => {
+    statusFilterRef.current = statusFilter;
+  }, [statusFilter]);
+
   // Search debounce (300ms) — resets to page 1 (public parity)
   useEffect(() => {
     if (skipSearchEffect.current) {
@@ -147,7 +154,7 @@ export default function OrganizerDashboard() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setPage(1);
-      loadTournaments(1, statusFilter, search, true);
+      loadTournaments(1, statusFilterRef.current, search, true);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -177,6 +184,12 @@ export default function OrganizerDashboard() {
   }
 
   function pickStatus(st: string) {
+    // #46: cancel any pending search debounce so it can't overwrite this chip pick
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    statusFilterRef.current = st;
     setStatusFilter(st);
     setPage(1);
     loadTournaments(1, st, search, true);
