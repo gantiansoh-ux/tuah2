@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
@@ -80,22 +80,6 @@ function getTypeInfo(type: string | null | undefined) {
   };
 }
 
-function computeStats(tournaments: Tournament[]): DashboardStats {
-  let active = 0;
-  let drafts = 0;
-  let completed = 0;
-  for (const t of tournaments) {
-    if (t.status === "in_progress" || t.status === "live" || t.status === "published" || t.status === "registration") {
-      active++;
-    } else if (t.status === "draft") {
-      drafts++;
-    } else if (t.status === "completed") {
-      completed++;
-    }
-  }
-  return { total: tournaments.length, active, drafts, completed };
-}
-
 // ─── Page Component ─────────────────────────────
 function fmtLocalDate(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -113,6 +97,14 @@ export default function OrganizerDashboard() {
   const [loading, setLoading] = useState(true);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const router = useRouter();
+  // P1-002: search / status filter / pagination
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<any>(null);
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipSearchEffect = useRef(true);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -125,22 +117,66 @@ export default function OrganizerDashboard() {
 
   useEffect(() => {
     if (!user) return;
-    loadTournaments();
+    // Restore search/status/page from URL params (refresh keeps state)
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get("search") || "";
+    const st = sp.get("status") || "";
+    const p = Math.max(1, parseInt(sp.get("page") || "1") || 1);
+    setSearch(q);
+    setStatusFilter(st);
+    setPage(p);
+    loadTournaments(p, st, q, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  async function loadTournaments() {
+  // Search debounce (300ms) — resets to page 1 (public parity)
+  useEffect(() => {
+    if (skipSearchEffect.current) {
+      skipSearchEffect.current = false;
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setPage(1);
+      loadTournaments(1, statusFilter, search, true);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  async function loadTournaments(p: number, st: string, q: string, push = true) {
     setLoading(true);
     try {
-      const res = await fetch("/api/tournaments/list");
+      const params = new URLSearchParams({ page: String(p), limit: "12" });
+      if (st) params.set("status", st);
+      if (q.trim()) params.set("search", q.trim());
+      const res = await fetch(`/api/tournaments/list?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setTournaments(data.tournaments || []);
+        setPagination(data.pagination || null);
+        setStatusCounts(data.status_counts || {});
+        if (push) window.history.replaceState(null, "", `/organizer?${params.toString()}`);
       }
     } catch (err) {
       console.error("Failed to load tournaments:", err);
     } finally {
       setLoading(false);
     }
+  }
+
+  function pickStatus(st: string) {
+    setStatusFilter(st);
+    setPage(1);
+    loadTournaments(1, st, search, true);
+  }
+
+  function goPage(p: number) {
+    if (p < 1) return;
+    setPage(p);
+    loadTournaments(p, statusFilter, search, true);
   }
 
   // Close profile menu on outside click
@@ -162,7 +198,17 @@ export default function OrganizerDashboard() {
     );
   if (!user) return null;
 
-  const stats = computeStats(tournaments);
+  // P1-002: stats read from status_counts (whole-org scope; unaffected by filters)
+  const stats: DashboardStats = {
+    total: Object.values(statusCounts).reduce((a, b) => a + b, 0),
+    active:
+      (statusCounts.in_progress || 0) +
+      (statusCounts.live || 0) +
+      (statusCounts.published || 0) +
+      (statusCounts.registration || 0),
+    drafts: statusCounts.draft || 0,
+    completed: statusCounts.completed || 0,
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -271,6 +317,37 @@ export default function OrganizerDashboard() {
           </Link>
         </div>
 
+        {/* P1-002: Search + Status Filter */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-6">
+          <div className="relative flex-1 max-w-md">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tournaments..."
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => pickStatus("")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${statusFilter === "" ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-gray-600 border-gray-200 hover:border-emerald-400"}`}
+            >
+              All
+            </button>
+            {Object.keys(STATUS_KEYS).map((st) => (
+              <button
+                key={st}
+                onClick={() => pickStatus(st)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${statusFilter === st ? "bg-emerald-700 text-white border-emerald-700" : "bg-white text-gray-600 border-gray-200 hover:border-emerald-400"}`}
+              >
+                {STATUS_KEYS[st]}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* ─── Loading State ────────────────────────────────────── */}
         {loading && (
           <div className="text-center py-20">
@@ -280,7 +357,20 @@ export default function OrganizerDashboard() {
         )}
 
         {/* ─── Empty State ──────────────────────────────────────── */}
-        {!loading && tournaments.length === 0 && (
+        {!loading && tournaments.length === 0 && (search || statusFilter) && (
+          <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <div className="text-6xl mb-4">🔍</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">No tournaments found</h2>
+            <p className="text-gray-400 mb-6">Try adjusting your search or filters</p>
+            <button
+              onClick={() => { setSearch(""); setStatusFilter(""); setPage(1); loadTournaments(1, "", "", true); }}
+              className="bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-emerald-600"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+        {!loading && tournaments.length === 0 && !search && !statusFilter && (
           <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
             <div className="text-6xl mb-4">🏆</div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">No tournaments yet</h2>
@@ -354,6 +444,34 @@ export default function OrganizerDashboard() {
                 </Link>
               );
             })}
+          </div>
+        )}
+
+        {/* P1-002: Pagination */}
+        {!loading && pagination && pagination.total > 0 && (
+          <div className="flex items-center justify-between mt-10 text-sm text-gray-600">
+            <span>
+              Showing {tournaments.length} of {pagination.total}
+            </span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => goPage(page - 1)}
+                disabled={page <= 1}
+                className="px-4 py-2 rounded-xl bg-white border border-gray-200 font-semibold disabled:opacity-40 hover:border-emerald-400 transition-colors"
+              >
+                ← Prev
+              </button>
+              <span className="font-semibold text-gray-800">
+                Page {pagination.page} / {pagination.totalPages}
+              </span>
+              <button
+                onClick={() => goPage(page + 1)}
+                disabled={!pagination.hasMore}
+                className="px-4 py-2 rounded-xl bg-white border border-gray-200 font-semibold disabled:opacity-40 hover:border-emerald-400 transition-colors"
+              >
+                Next →
+              </button>
+            </div>
           </div>
         )}
       </div>
