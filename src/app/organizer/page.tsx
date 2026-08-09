@@ -105,6 +105,8 @@ export default function OrganizerDashboard() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipSearchEffect = useRef(true);
+  // #47: suppress search-debounce replay caused by URL-restore setSearch
+  const isRestoring = useRef(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -122,7 +124,10 @@ export default function OrganizerDashboard() {
     const q = sp.get("search") || "";
     const st = sp.get("status") || "";
     const p = Math.max(1, parseInt(sp.get("page") || "1") || 1);
-    setSearch(q);
+    if (q !== "") {
+      isRestoring.current = true;
+      setSearch(q);
+    }
     setStatusFilter(st);
     setPage(p);
     loadTournaments(p, st, q, false);
@@ -133,6 +138,10 @@ export default function OrganizerDashboard() {
   useEffect(() => {
     if (skipSearchEffect.current) {
       skipSearchEffect.current = false;
+      return;
+    }
+    if (isRestoring.current) {
+      isRestoring.current = false;
       return;
     }
     if (debounceRef.current) clearTimeout(debounceRef.current);
