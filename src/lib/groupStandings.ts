@@ -333,7 +333,26 @@ export function buildKOPairings(
 
   let pairs: KOPair[] = [];
 
-  if (
+  if (standings.length === 1) {
+    // Single group → qualifiers go straight into the KO bracket (e.g.
+    // 1 group x 4, Top-2 → direct 2-person Final). Cross-group pairing is
+    // impossible, so pair by rank: #1 vs #2, #3 vs #4, ...; top-ranked
+    // qualifiers get byes when the count is odd (same seeded convention as
+    // the multi-group branch). BUG-G4-001: pairCrossGroup() refused
+    // same-group pairs and emitted walkover singles instead, so the group
+    // runner-up never reached the Final.
+    const ordered = [...quals].sort((a, b) => a.rank - b.rank || byStats(a, b));
+    const byeIds = new Set(ordered.slice(0, byes).map((q) => q.entry_id));
+    const rest = ordered.filter((q) => !byeIds.has(q.entry_id));
+    pairs = [];
+    for (const b of ordered.slice(0, byes)) pairs.push({ e1: b, e2: null });
+    for (let i = 0; i + 1 < rest.length; i += 2) {
+      pairs.push({ e1: rest[i], e2: rest[i + 1] });
+    }
+    if (rest.length % 2 === 1) {
+      pairs.push({ e1: rest[rest.length - 1], e2: null });
+    }
+  } else if (
     byes === 0 &&
     adv >= 2 &&
     standings.length > 1 &&
