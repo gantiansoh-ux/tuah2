@@ -31,9 +31,6 @@ export async function POST(req: NextRequest) {
     if (!entry_id) {
       return NextResponse.json({ error: "entry_id is required" }, { status: 400 });
     }
-    if (!tournament_id) {
-      return NextResponse.json({ error: "tournament_id is required" }, { status: 400 });
-    }
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: "Valid amount is required" }, { status: 400 });
     }
@@ -53,6 +50,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Not your entry" }, { status: 403 });
     }
 
+    // F-02 (GATE-3): tournament_id is DERIVED server-side from the entry
+    // (entries.category_id -> categories.tournament_id). The client-supplied
+    // value is never trusted for the write: if provided it must match the
+    // derived tournament, otherwise 400 — prevents cross-organization payment
+    // ledger pollution (payment hung on a tournament the entry doesn't belong
+    // to). Client that omits tournament_id still works (derived below).
+    const category = await queryOne(
+      `SELECT tournament_id FROM categories WHERE id = $1`,
+      [entry.category_id]
+    );
+    const derivedTournamentId = category?.tournament_id ?? null;
+    if (!derivedTournamentId) {
+      return NextResponse.json(
+        { error: "Entry has no valid category" },
+        { status: 400 }
+      );
+    }
+    if (tournament_id && tournament_id !== derivedTournamentId) {
+      return NextResponse.json(
+        { error: "tournament_id does not match the entry's tournament" },
+        { status: 400 }
+      );
+    }
+
     // Generate a payment reference
     const payment_reference = `TUAH-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     const user_id = payload.userId;
@@ -64,7 +85,7 @@ export async function POST(req: NextRequest) {
        RETURNING *`,
       [
         user_id,
-        tournament_id,
+        derivedTournamentId,
         entry_id,
         amount,
         payment_method,

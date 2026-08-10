@@ -29,7 +29,7 @@ export async function GET(
     // URLs and payment fields are only returned to the tournament organizer, an
     // admin, or the participants of this match themselves.
     const organizer = await queryOne(
-      `SELECT organizer_id FROM tournaments WHERE id = $1`,
+      `SELECT organizer_id, status FROM tournaments WHERE id = $1`,
       [match.tournament_id]
     );
     const cookie = req.cookies.get(getCookieName())?.value;
@@ -39,6 +39,14 @@ export async function GET(
       (payload.role === "admin" ||
         (organizer && payload.userId === organizer.organizer_id))
     );
+
+    // F-01 (GATE-3): draft tournaments are visible only to their owner (or an
+    // admin). Everyone else gets the SAME 404 shape as a missing match so the
+    // draft tournament's existence (and its matches) is not leaked — consistent
+    // with tournaments/[id] draft -> 404 semantics (no oracle).
+    if (organizer?.status === "draft" && !isPrivileged) {
+      return NextResponse.json({ error: "Match not found" }, { status: 404 });
+    }
 
     const games = await queryAll(
       `SELECT * FROM games WHERE match_id = $1 ORDER BY game_number`,
