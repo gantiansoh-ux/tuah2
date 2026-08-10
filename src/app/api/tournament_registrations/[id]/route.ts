@@ -15,10 +15,13 @@ export async function GET(
 
   const { id } = await params;
   try {
+    // SEC-3A2-04: a registration (with player email) is only visible to the
+    // registrant themselves, the tournament organizer, or an admin.
     const registration = await queryOne(
-      `SELECT r.*, p.full_name AS player_name, p.email AS player_email
+      `SELECT r.*, p.full_name AS player_name, p.email AS player_email, t.organizer_id
        FROM tournament_registrations r
        LEFT JOIN profiles p ON r.profile_id = p.id
+       JOIN tournaments t ON t.id = r.tournament_id
        WHERE r.id = $1`,
       [id]
     );
@@ -27,7 +30,15 @@ export async function GET(
       return NextResponse.json({ error: "Registration not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ registration });
+    const isSelf = registration.profile_id === payload.userId;
+    const isOrg = payload.role === "admin" || registration.organizer_id === payload.userId;
+    if (!isSelf && !isOrg) {
+      return NextResponse.json({ error: "Forbidden — not your registration" }, { status: 403 });
+    }
+
+    // Don't leak the internal join column back to the caller.
+    const { organizer_id, ...safe } = registration;
+    return NextResponse.json({ registration: safe });
   } catch (err: any) {
     console.error("Get registration error:", err);
     return NextResponse.json({ error: "Failed to load registration" }, { status: 500 });

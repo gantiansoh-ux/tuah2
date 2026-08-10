@@ -108,11 +108,43 @@ export async function GET(req: NextRequest) {
 
     let payments;
     if (entry_id) {
+      // SEC-3A2-05: payments for an entry are visible to the payer themselves
+      // or the tournament organizer/admin. Anyone else gets 403.
       payments = await queryAll(
-        "SELECT * FROM payments WHERE entry_id = $1 ORDER BY created_at DESC",
+        `SELECT p.*, t.organizer_id
+         FROM payments p
+         LEFT JOIN tournaments t ON t.id = p.tournament_id
+         WHERE p.entry_id = $1
+         ORDER BY p.created_at DESC`,
         [entry_id]
       );
+      if (payments.length > 0) {
+        const first = payments[0];
+        const allowed =
+          payload.role === "admin" ||
+          first.user_id === payload.userId ||
+          first.organizer_id === payload.userId;
+        if (!allowed) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+      }
+      // Strip the internal join column before responding.
+      return NextResponse.json({
+        payments: payments.map(({ organizer_id, ...rest }: any) => rest),
+      });
     } else if (tournament_id) {
+      // SEC-3A2-05: tournament payment lists are private to the tournament
+      // organizer (or an admin). Anyone else gets 403.
+      const tournament = await queryOne(
+        "SELECT organizer_id FROM tournaments WHERE id = $1",
+        [tournament_id]
+      );
+      if (!tournament) {
+        return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+      }
+      if (payload.role !== "admin" && tournament.organizer_id !== payload.userId) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       payments = await queryAll(
         "SELECT * FROM payments WHERE tournament_id = $1 ORDER BY created_at DESC",
         [tournament_id]

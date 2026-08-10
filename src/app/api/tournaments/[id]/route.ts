@@ -13,18 +13,10 @@ export async function GET(
     return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   }
   try {
-    const [tournament, categories, matches, entries, games] = await Promise.all([
+    const [tournament, categories, matches, games] = await Promise.all([
       queryOne("SELECT * FROM tournaments WHERE id = $1", [id]),
       queryAll("SELECT * FROM categories WHERE tournament_id = $1", [id]),
       queryAll("SELECT * FROM matches WHERE tournament_id = $1 ORDER BY round, match_number", [id]),
-      queryAll(
-        `SELECT e.*, p1.full_name AS player_1_name, p2.full_name AS player_2_name
-         FROM entries e
-         LEFT JOIN profiles p1 ON e.player_1_id = p1.id
-         LEFT JOIN profiles p2 ON e.player_2_id = p2.id
-         WHERE e.category_id IN (SELECT id FROM categories WHERE tournament_id = $1)`,
-        [id]
-      ),
       queryAll(
         `SELECT g.* FROM games g
          JOIN matches m ON g.match_id = m.id
@@ -36,16 +28,40 @@ export async function GET(
 
     if (!tournament) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+    // SEC-3A2-01: entries are role-gated. The public/spectator response only
+    // gets a whitelist of non-sensitive columns (name/seed/status); document
+    // URLs (ic/passport/student card) and payment fields are only returned to
+    // the tournament organizer or an admin. No e.* dump for anonymous users.
+    const cookie = req.cookies.get(getCookieName())?.value;
+    const payload = cookie ? await verifyToken(cookie) : null;
+    const isPrivileged = !!(
+      payload &&
+      (payload.userId === tournament.organizer_id || payload.role === "admin")
+    );
+
     // Draft tournaments are visible only to the owner (or admin). Other users
     // get 404 so the tournament's existence isn't leaked.
-    if (tournament.status === "draft") {
-      const cookie = req.cookies.get(getCookieName())?.value;
-      const payload = cookie ? await verifyToken(cookie) : null;
-      const isOwner = payload && (payload.userId === tournament.organizer_id || payload.role === "admin");
-      if (!isOwner) {
-        return NextResponse.json({ error: "Not found" }, { status: 404 });
-      }
+    if (tournament.status === "draft" && !isPrivileged) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Entry columns by role: full row for organizer/admin, whitelist otherwise.
+    const entryCols = isPrivileged
+      ? `e.id, e.category_id, e.player_1_id, e.player_2_id, e.team_name, e.seed,
+         e.status, e.checked_in, e.created_at, e.ic_document_url, e.passport_url,
+         e.student_card_url, e.payment_status, e.payment_method, e.payment_reference,
+         e.registration_status, e.confirmed_at`
+      : `e.id, e.category_id, e.team_name, e.seed, e.status, e.registration_status,
+         e.confirmed_at, e.created_at`;
+    const entries = await queryAll(
+      `SELECT ${entryCols},
+              p1.full_name AS player_1_name, p2.full_name AS player_2_name
+       FROM entries e
+       LEFT JOIN profiles p1 ON e.player_1_id = p1.id
+       LEFT JOIN profiles p2 ON e.player_2_id = p2.id
+       WHERE e.category_id IN (SELECT id FROM categories WHERE tournament_id = $1)`,
+      [id]
+    );
 
     return NextResponse.json({ tournament, categories, matches, entries, games });
   } catch (err: any) {

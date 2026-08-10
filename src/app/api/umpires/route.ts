@@ -14,10 +14,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fetch all umpire profiles (role = 'umpire' OR roles array contains 'umpire')
-    // Include aggregated rating from umpire_reviews
+    // SEC-3A2-07: the umpire directory is a public-ish listing for logged-in
+    // users — never expose email/phone PII. Keep name + aggregate stats only.
     const umpires = await queryAll(
-      `SELECT p.id, p.full_name, p.email, p.phone,
+      `SELECT p.id, p.full_name,
               COALESCE(AVG(r.rating)::numeric(2,1), 0) AS avg_rating,
               COUNT(r.id)::int AS review_count,
               COUNT(m.id)::int AS matches_umpired
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
        LEFT JOIN umpire_reviews r ON r.umpire_id = p.id
        LEFT JOIN matches m ON m.umpire_id = p.id
        WHERE p.role = 'umpire' OR 'umpire' = ANY(p.roles)
-       GROUP BY p.id, p.full_name, p.email, p.phone
+       GROUP BY p.id, p.full_name
        ORDER BY avg_rating DESC, p.full_name ASC`
     );
 

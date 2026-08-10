@@ -23,6 +23,23 @@ export async function GET(
       return NextResponse.json({ error: "Match not found" }, { status: 404 });
     }
 
+    // SEC-3A2-02: entries in the match response are role-gated.
+    // Anonymous spectators can still read the match (audience portal / QR page
+    // call this route without auth), but only get whitelisted columns. Document
+    // URLs and payment fields are only returned to the tournament organizer, an
+    // admin, or the participants of this match themselves.
+    const organizer = await queryOne(
+      `SELECT organizer_id FROM tournaments WHERE id = $1`,
+      [match.tournament_id]
+    );
+    const cookie = req.cookies.get(getCookieName())?.value;
+    const payload = cookie ? await verifyToken(cookie) : null;
+    const isPrivileged = !!(
+      payload &&
+      (payload.role === "admin" ||
+        (organizer && payload.userId === organizer.organizer_id))
+    );
+
     const games = await queryAll(
       `SELECT * FROM games WHERE match_id = $1 ORDER BY game_number`,
       [id]
@@ -49,9 +66,13 @@ export async function GET(
       }
     }
 
+    // Whitelist columns for the public view. player_1_id/player_2_id are still
+    // selected server-side for the participant check below, then stripped from
+    // the public response.
     const entries = await queryAll(
-      `SELECT e.*, 
-              COALESCE(p1.full_name, '') as player_1_name, 
+      `SELECT e.id, e.category_id, e.player_1_id, e.player_2_id, e.team_name,
+              e.seed, e.status, e.registration_status, e.confirmed_at, e.created_at,
+              COALESCE(p1.full_name, '') as player_1_name,
               COALESCE(p2.full_name, '') as player_2_name
        FROM entries e
        LEFT JOIN profiles p1 ON e.player_1_id = p1.id
@@ -60,8 +81,33 @@ export async function GET(
       [match.entry_1_id, match.entry_2_id]
     );
 
-    const e1 = entries.find((e: any) => e.id === match.entry_1_id);
-    const e2 = entries.find((e: any) => e.id === match.entry_2_id);
+    const isParticipant = !!(
+      payload &&
+      entries.some(
+        (e: any) => e.player_1_id === payload.userId || e.player_2_id === payload.userId
+      )
+    );
+
+    let entriesOut: any[];
+    if (isPrivileged || isParticipant) {
+      // Merge sensitive columns for organizer/admin/participant only.
+      const sensitive = await queryAll(
+        `SELECT e.id, e.ic_document_url, e.passport_url, e.student_card_url,
+                e.payment_status, e.payment_method, e.payment_reference
+         FROM entries e WHERE e.id = $1 OR e.id = $2`,
+        [match.entry_1_id, match.entry_2_id]
+      );
+      entriesOut = entries.map((e: any) => {
+        const s = sensitive.find((x: any) => x.id === e.id);
+        return s ? { ...e, ...s } : e;
+      });
+    } else {
+      // Strip internal profile ids from the public view (no PII leakage).
+      entriesOut = entries.map(({ player_1_id, player_2_id, ...rest }: any) => rest);
+    }
+
+    const e1 = entriesOut.find((e: any) => e.id === match.entry_1_id);
+    const e2 = entriesOut.find((e: any) => e.id === match.entry_2_id);
     const sideName = (e: any) =>
       e?.player_2_name ? `${e.player_1_name} / ${e.player_2_name}` : (e?.player_1_name || "");
 
@@ -85,7 +131,7 @@ export async function GET(
       cardLogs,
       pointLogs,
       category,
-      entries,
+      entries: entriesOut,
     });
   } catch (err: any) {
     console.error("Get match error:", err);

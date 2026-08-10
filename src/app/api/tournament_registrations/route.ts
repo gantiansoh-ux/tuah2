@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, queryOne } from "@/lib/db";
 import { checkRegistrationAllowed } from "@/lib/registration";
 
 // GET /api/tournament_registrations?tournament_id=xxx
@@ -13,6 +13,19 @@ export async function GET(req: NextRequest) {
   try {
     const tournament_id = req.nextUrl.searchParams.get("tournament_id");
     if (!tournament_id) return NextResponse.json({ error: "tournament_id required" }, { status: 400 });
+
+    // SEC-3A2-03: registration lists (with player emails) are private to the
+    // tournament organizer (or an admin). Any other role gets 403.
+    const tournament = await queryOne(
+      "SELECT organizer_id FROM tournaments WHERE id = $1",
+      [tournament_id]
+    );
+    if (!tournament) {
+      return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+    }
+    if (payload.role !== "admin" && tournament.organizer_id !== payload.userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
 
     const result = await query(
       `SELECT r.*, p.full_name AS player_name, p.email AS player_email

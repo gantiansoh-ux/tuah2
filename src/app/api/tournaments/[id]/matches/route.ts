@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query } from "@/lib/db";
+import { query, queryOne, queryAll } from "@/lib/db";
+
+// SEC-3A2-06: only the tournament organizer (or an admin) may create matches
+// in a tournament. The category must belong to the tournament in the path.
+async function canManageTournament(id: string, payload: { userId: string; role: string } | null) {
+  if (!payload) return null;
+  const tournament = await queryOne("SELECT organizer_id FROM tournaments WHERE id = $1", [id]);
+  if (!tournament) return { notFound: true } as any;
+  if (payload.role !== "admin" && tournament.organizer_id !== payload.userId) {
+    return { forbidden: true } as any;
+  }
+  return { ok: true } as any;
+}
 
 export async function POST(
   req: NextRequest,
@@ -16,6 +28,12 @@ export async function POST(
   const payload = await verifyToken(cookie);
   if (!payload) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const gate = await canManageTournament(id, payload);
+  if (gate?.notFound) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (gate?.forbidden) {
+    return NextResponse.json({ error: "Forbidden — not your tournament" }, { status: 403 });
   }
 
   try {
@@ -34,6 +52,21 @@ export async function POST(
 
     if (!category_id) {
       return NextResponse.json({ error: "category_id is required" }, { status: 400 });
+    }
+
+    // SEC-3A2-06: the category must belong to this tournament.
+    const cat = await queryOne(
+      "SELECT tournament_id FROM categories WHERE id = $1",
+      [category_id]
+    );
+    if (!cat) {
+      return NextResponse.json({ error: "Category not found" }, { status: 404 });
+    }
+    if (cat.tournament_id !== id) {
+      return NextResponse.json(
+        { error: "category_id does not belong to this tournament" },
+        { status: 400 }
+      );
     }
 
     const result = await query(
@@ -77,6 +110,12 @@ export async function PUT(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const gate = await canManageTournament(id, payload);
+  if (gate?.notFound) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (gate?.forbidden) {
+    return NextResponse.json({ error: "Forbidden — not your tournament" }, { status: 403 });
+  }
+
   try {
     const body = await req.json();
     const { matches } = body;
@@ -92,6 +131,22 @@ export async function PUT(
         { error: `matches[${missingCat}].category_id is required` },
         { status: 400 }
       );
+    }
+
+    // SEC-3A2-06: every category must belong to this tournament.
+    const catIds = [...new Set(matches.map((m: any) => m.category_id))];
+    const cats = await queryAll(
+      "SELECT id, tournament_id FROM categories WHERE id = ANY($1)",
+      [catIds]
+    );
+    const catMap = new Map(cats.map((c: any) => [c.id, c.tournament_id]));
+    for (const m of matches) {
+      if (catMap.get(m.category_id) !== id) {
+        return NextResponse.json(
+          { error: `category_id ${m.category_id} does not belong to this tournament` },
+          { status: 400 }
+        );
+      }
     }
 
     const created: any[] = [];
