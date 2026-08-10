@@ -1,8 +1,19 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "tuah-super-secret-jwt-key-change-in-production-2026"
-);
+// SEC-3A1-01 (2026-08-11): JWT_SECRET must come from the environment.
+// The previous hardcoded fallback key shipped verbatim in the production
+// bundle, letting anyone forge admin JWTs. There is no fallback branch
+// anymore: if the secret is missing (or shorter than 32 chars) we refuse to
+// start/sign — fail fast instead of silently signing with a known key.
+const rawSecret = process.env.JWT_SECRET;
+if (!rawSecret || rawSecret.length < 32) {
+  throw new Error(
+    "FATAL: JWT_SECRET is not set (or shorter than 32 chars). " +
+      "Refusing to start/sign tokens — SEC-3A1-01. Set JWT_SECRET via the " +
+      "process environment (e.g. ecosystem.config.js env / .env.local)."
+  );
+}
+const JWT_SECRET = new TextEncoder().encode(rawSecret);
 
 const COOKIE_NAME = "tuah_token";
 

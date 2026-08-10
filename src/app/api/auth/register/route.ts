@@ -8,6 +8,13 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password, fullName, role } = await req.json();
 
+    // SEC-3A1-02 (2026-08-11): server-side role whitelist. The DB role is
+    // never taken verbatim from the client — anything outside
+    // organizer/player/umpire (e.g. a client-submitted "admin") is silently
+    // downgraded to the default "organizer".
+    const ALLOWED_ROLES = new Set(["organizer", "player", "umpire"]);
+    const finalRole = ALLOWED_ROLES.has(role) ? role : "organizer";
+
     // Validate required + email format
     if (!email || !email.trim()) {
       return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -44,7 +51,7 @@ export async function POST(req: NextRequest) {
       `INSERT INTO profiles (email, full_name, password_hash, role)
        VALUES ($1, $2, $3, $4)
        RETURNING id, email, full_name, role`,
-      [email.trim(), fullName, passwordHash, role || "organizer"]
+      [email.trim(), fullName, passwordHash, finalRole]
     );
 
     const profile = result.rows[0];

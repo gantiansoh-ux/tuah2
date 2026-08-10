@@ -4,13 +4,20 @@ import { queryOne, query } from "@/lib/db";
 import crypto from "crypto";
 
 // POST /api/auth/admin-reset
-// Admin-only: generates a reset token for any user in debug mode
+// Admin-only: generates a reset token for any user (dev tool)
 export async function POST(req: NextRequest) {
+  // SEC-3A1 admin-reset (2026-08-11): hard-disabled in production (404),
+  // regardless of auth state — this dev-only helper must not exist on the
+  // live site.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const cookie = req.cookies.get(getCookieName())?.value;
   if (!cookie) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const payload = await verifyToken(cookie);
-  if (!payload || (payload.role !== "admin" && payload.role !== "organizer")) {
-    return NextResponse.json({ error: "Forbidden — admin/organizer only" }, { status: 403 });
+  if (!payload || payload.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 });
   }
 
   try {
@@ -35,17 +42,9 @@ export async function POST(req: NextRequest) {
       [token, expires.toISOString(), profile.id]
     );
 
-    // Build a magic reset URL
-    const resetUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}/auth/reset-password?token=${token}`;
-
-    return NextResponse.json({
-      ok: true,
-      email: profile.email,
-      token,
-      reset_url: resetUrl,
-      expires: expires.toISOString(),
-      note: "This endpoint is for dev/admin use only. Remove before production.",
-    });
+    // SEC-3A1 admin-reset (2026-08-11): never return the reset token or the
+    // reset URL in the response body.
+    return NextResponse.json({ ok: true, email: profile.email });
   } catch (err: any) {
     console.error("Admin reset error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
