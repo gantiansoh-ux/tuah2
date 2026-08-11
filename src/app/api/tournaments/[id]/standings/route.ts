@@ -72,7 +72,8 @@ export async function GET(
          FROM entries e
          LEFT JOIN profiles p1 ON e.player_1_id = p1.id
          LEFT JOIN profiles p2 ON e.player_2_id = p2.id
-         WHERE e.category_id = $1`,
+         WHERE e.category_id = $1
+         AND (e.registration_status IS NULL OR e.registration_status != 'rejected')`,
         [cat.id]
       );
       const matches = await queryAll(
