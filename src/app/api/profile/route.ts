@@ -133,3 +133,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   return POST(req);
 }
+
+// PUT /api/profile - alias of POST (BUG-G5-001: player profile Save Profile uses PUT)
+export async function PUT(req: NextRequest) {
+  return POST(req);
+}
