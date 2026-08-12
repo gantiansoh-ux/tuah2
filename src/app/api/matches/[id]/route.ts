@@ -318,7 +318,7 @@ export async function PATCH(
     // #47: ignore unfillable null-null KO placeholders (e.g. whole group withdrew)
     // #50: runs AFTER group→KO fill so a freshly-filled KO stage is never
     //      miscounted as "nothing left" (premature COMPLETED bug).
-    if (body.status === 'completed' && advanceWinner) {
+    if (body.status === 'completed') {
       const updatedMatch = result.rows[0];
       const remaining = await query(
         `SELECT COUNT(*)::int AS cnt FROM matches
