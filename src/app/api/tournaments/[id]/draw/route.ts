@@ -237,11 +237,23 @@ export async function POST(
                 .sort((a, b) => a.match_number - b.match_number);
               const idxInRound = roundMatches.findIndex((m) => m.db_id === match.db_id);
               if (idxInRound !== -1) {
-                const slotField = idxInRound % 2 === 0 ? 'entry_1_id' : 'entry_2_id';
-                await query(
-                  `UPDATE matches SET ${slotField} = $1 WHERE id = $2`,
-                  [byeWinner, target.db_id]
+                // UAT-E-c: guard against a self-matchup / double-fill. Never place
+                // byeWinner into a target slot if it already occupies that target
+                // (should be impossible with single-leaf seeding, but defend against
+                // concurrency/edge), and never overwrite an already-filled slot.
+                const tgtRow = await queryOne(
+                  `SELECT entry_1_id, entry_2_id FROM matches WHERE id = $1`,
+                  [target.db_id]
                 );
+                const slotField = idxInRound % 2 === 0 ? 'entry_1_id' : 'entry_2_id';
+                const occupied = slotField === 'entry_1_id' ? tgtRow?.entry_1_id : tgtRow?.entry_2_id;
+                const otherSlot = slotField === 'entry_1_id' ? tgtRow?.entry_2_id : tgtRow?.entry_1_id;
+                if (byeWinner !== otherSlot && !occupied) {
+                  await query(
+                    `UPDATE matches SET ${slotField} = $1 WHERE id = $2`,
+                    [byeWinner, target.db_id]
+                  );
+                }
               }
             }
           }

@@ -144,14 +144,16 @@ export async function POST(req: NextRequest) {
 
     // BUG-003 fix (2026-08-07): pad scoring must write the point_logs ledger
     // so challenges can reference the contested point (Post-Game Undo).
-    // Deltas computed against previous persisted scores, then ONE transaction:
-    // UPDATE games + INSERT point_logs for each added point.
+    // UAT-E-b (2026-08-13): RECONCILE the ledger to the NEW score, not a delta,
+    // so a DOWNWARD correction a) no longer leaves phantom point_logs rows and
+    // b) point_logs count always equals the entry's actual score.
+    //   - score up   -> insert the missing normal point_logs rows
+    //   - score down -> delete the excess trailing normal point_logs rows
+    // (Challenge/point-replay integrity depends on this invariant.)
     const prevS1 = game.score_1 ?? 0;
     const prevS2 = game.score_2 ?? 0;
     const newS1 = score_entry_1 !== undefined ? score_entry_1 : prevS1;
     const newS2 = score_entry_2 !== undefined ? score_entry_2 : prevS2;
-    const delta1 = Math.max(0, (newS1 ?? 0) - prevS1);
-    const delta2 = Math.max(0, (newS2 ?? 0) - prevS2);
 
     const pool = getPool();
     const client = await pool.connect();
@@ -164,22 +166,41 @@ export async function POST(req: NextRequest) {
       );
       g = upd.rows[0];
 
-      // ledger: one point_log per added point (normal type, attributed to entry)
-      const pointEntries: Array<{ entryId: string | null; playerNumber: number; count: number }> = [];
-      if (delta1 > 0 && matchRow?.entry_1_id) pointEntries.push({ entryId: matchRow.entry_1_id, playerNumber: 1, count: delta1 });
-      if (delta2 > 0 && matchRow?.entry_2_id) pointEntries.push({ entryId: matchRow.entry_2_id, playerNumber: 2, count: delta2 });
-      if (pointEntries.length > 0) {
-        const cnt = await client.query(`SELECT COUNT(*)::int AS c FROM point_logs WHERE game_id = $1`, [id]);
-        let pointNumber = (cnt.rows[0]?.c ?? 0) + 1;
-        for (const pe of pointEntries) {
-          for (let k = 0; k < pe.count; k++) {
+      // Ledger entries to reconcile: entryId -> target score count
+      const targets: Array<{ entryId: string | null; playerNumber: number; target: number }> = [];
+      if (matchRow?.entry_1_id) targets.push({ entryId: matchRow.entry_1_id, playerNumber: 1, target: Math.max(0, newS1 ?? 0) });
+      if (matchRow?.entry_2_id) targets.push({ entryId: matchRow.entry_2_id, playerNumber: 2, target: Math.max(0, newS2 ?? 0) });
+      for (const tgt of targets) {
+        const cur = await client.query(
+          `SELECT COUNT(*)::int AS c, COALESCE(MAX(point_number),0)::int AS mx
+           FROM point_logs WHERE game_id = $1 AND scoring_entry_id = $2 AND point_type = 'normal'`,
+          [id, tgt.entryId]
+        );
+        const have = cur.rows[0]?.c ?? 0;
+        const desired = tgt.target;
+        if (desired > have) {
+          // insert the missing points (point numbers continue after the max)
+          let pointNumber = (cur.rows[0]?.mx ?? 0) + 1;
+          for (let k = 0; k < desired - have; k++) {
             await client.query(
               `INSERT INTO point_logs (game_id, match_id, point_number, scoring_entry_id, point_type, player_number)
                VALUES ($1, $2, $3, $4, 'normal', $5)`,
-              [id, game.match_id, pointNumber, pe.entryId, pe.playerNumber]
+              [id, game.match_id, pointNumber, tgt.entryId, tgt.playerNumber]
             );
             pointNumber += 1;
           }
+        } else if (desired < have) {
+          // UAT-E-b: downward correction -> delete the excess trailing normal rows
+          await client.query(
+            `DELETE FROM point_logs
+             WHERE id IN (
+               SELECT id FROM point_logs
+               WHERE game_id = $1 AND scoring_entry_id = $2 AND point_type = 'normal'
+               ORDER BY point_number DESC
+               LIMIT $3
+             )`,
+            [id, tgt.entryId, have - desired]
+          );
         }
       }
 
