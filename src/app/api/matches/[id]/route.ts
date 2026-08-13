@@ -97,8 +97,8 @@ export async function GET(
     );
 
     let entriesOut: any[];
-    if (isPrivileged || isParticipant) {
-      // Merge sensitive columns for organizer/admin/participant only.
+    if (isPrivileged) {
+      // Organizer/admin see sensitive columns for BOTH entries (unchanged).
       const sensitive = await queryAll(
         `SELECT e.id, e.ic_document_url, e.passport_url, e.student_card_url,
                 e.payment_status, e.payment_method, e.payment_reference
@@ -106,6 +106,24 @@ export async function GET(
         [match.entry_1_id, match.entry_2_id]
       );
       entriesOut = entries.map((e: any) => {
+        const s = sensitive.find((x: any) => x.id === e.id);
+        return s ? { ...e, ...s } : e;
+      });
+    } else if (isParticipant) {
+      // SEC-3A2-02: a participant sees sensitive columns ONLY for the entry
+      // that belongs to them (player_1_id or player_2_id == caller). The
+      // opponent's identity docs and payment data are NOT exposed.
+      const sensitive = await queryAll(
+        `SELECT e.id, e.ic_document_url, e.passport_url, e.student_card_url,
+                e.payment_status, e.payment_method, e.payment_reference
+         FROM entries e WHERE e.id = $1 OR e.id = $2`,
+        [match.entry_1_id, match.entry_2_id]
+      );
+      entriesOut = entries.map((e: any) => {
+        const belongsToCaller =
+          (payload.userId && e.player_1_id === payload.userId) ||
+          (payload.userId && e.player_2_id === payload.userId);
+        if (!belongsToCaller) return e;
         const s = sensitive.find((x: any) => x.id === e.id);
         return s ? { ...e, ...s } : e;
       });
@@ -169,6 +187,20 @@ export async function PATCH(
     // Permission check: only the assigned umpire or tournament organizer can update a match
     const authCheck = await canControlMatch(payload.userId, payload.role, id);
     if (!authCheck.ok) return authCheck.response;
+
+    // P3 (umpire reassignment): only the tournament organizer or an admin may
+    // CHANGE who the assigned umpire is. The assigned umpire can do everything
+    // else on the match (status, scores, winner, court) but must not be able to
+    // reassign umpire_id to redirect the match to someone else.
+    const wantsUmpireChange = Object.prototype.hasOwnProperty.call(body, "umpire_id");
+    const isOrganizerOrAdmin = payload.role === "admin" ||
+      (authCheck.match && authCheck.match.organizer_id === payload.userId);
+    if (wantsUmpireChange && !isOrganizerOrAdmin) {
+      return NextResponse.json(
+        { error: "Not authorized - only the tournament organizer can reassign the umpire" },
+        { status: 403 }
+      );
+    }
 
     // P1-006: court+time conflict guard. When both court_number and scheduled_time
     // are being set, reject if another match in the SAME tournament already holds
