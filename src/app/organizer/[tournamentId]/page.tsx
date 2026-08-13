@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
 import type { Tournament, Category, Entry, Match as MatchType } from "@/lib/types";
+import { deuceCapFor } from "@/lib/scoring";
 
 import BracketView from "@/components/BracketView";
 
@@ -321,7 +322,7 @@ export default function TournamentDetailPage({
         type: catForm.type,
         gender: catForm.gender,
         format: catForm.format,
-        scoring_config: { points_per_game: catForm.points, best_of: catForm.bestOf, deuce: catForm.deuce, deuce_cap: 30, serve_switch: 5 },
+        scoring_config: { points_per_game: catForm.points, best_of: catForm.bestOf, deuce: catForm.deuce, deuce_cap: deuceCapFor(catForm.points), serve_switch: 5 },
       }),
     });
     if (res.ok) {

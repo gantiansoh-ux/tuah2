@@ -7,9 +7,26 @@ import { ScoringConfig } from "./types";
  * Rules:
  * - A game ends when a player reaches `points_per_game` with ≥2 point lead (if deuce is on)
  * - If deuce is on and neither player leads by 2, game continues until someone leads by 2
- * - A cap (`deuce_cap` or `max_cap`) ends the game at that score even without a 2-point lead
+ * - A cap (format-correct deuce ceiling, derived from points_per_game) ends the game
+ *   at that score even without a 2-point lead
  * - If deuce is off, first player to reach `points_per_game` wins
  */
+
+/**
+ * BWF-format-correct deuce ceiling for a given points_per_game.
+ * - 15-pt (BWF 3x15): win at 15, deuce from 14-14, cap at 21 (at 20-20 next point wins).
+ *   MAX = 21. Valid: 21-20. Invalid: 22-20, 21-21, 30.
+ * - 21-pt (BWF standard): win at 21, deuce from 20-20, cap at 30 (at 29-29 next point wins).
+ * - Other formats (11/31): target + 9 (the engine's documented deuce-candidate fallback),
+ *   consistent with the 21-pt convention (21 -> 30). A single hardcoded global cap is wrong.
+ */
+export function deuceCapFor(pointsPerGame: number): number {
+  switch (pointsPerGame) {
+    case 15: return 21;
+    case 21: return 30;
+    default: return pointsPerGame + 9;
+  }
+}
 
 export function checkGameOver(
   score1: number,
@@ -20,8 +37,10 @@ export function checkGameOver(
   const diff = Math.abs(score1 - score2);
 
   if (config.deuce) {
-    // Use deuce_cap if available, fall back to max_cap for backward compat, or target + 9 as last resort
-    const cap = config.deuce_cap ?? config.max_cap ?? target + 9;
+    // TUA8 (Gate #11): deuce_cap was hardcoded to 30 for every format, breaking 3x15 games
+    // (BWF: 15-pt cap is 21, not 30). Always derive the format-correct cap from points_per_game
+    // so enforcement is correct even for pre-existing data with a stale stored cap.
+    const cap = deuceCapFor(target);
 
     if (score1 >= target && score2 >= target) {
       // Both at or above target: deuce scoring, need 2-point lead OR reaching cap

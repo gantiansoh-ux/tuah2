@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { getPool, queryOne } from "@/lib/db";
+import { deuceCapFor } from "@/lib/scoring";
 
 // BUG-001 fix (2026-08-03): gender 'open' passed through to categories.gender,
 // violating categories_gender_check (male/female/mixed/any only) -> 500.
@@ -161,7 +162,7 @@ export async function POST(req: NextRequest) {
                 points_per_game: cat.points || 21,
                 best_of: cat.bestOf || 3,
                 deuce: cat.deuce !== false,
-                deuce_cap: 30,
+                deuce_cap: deuceCapFor(cat.points || 21),
                 serve_switch: 5,
               }),
               cat.maxEntries ?? cat.max_entries ?? (cat.type === "doubles" ? 32 : 64),

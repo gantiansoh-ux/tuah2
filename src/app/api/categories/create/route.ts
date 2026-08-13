@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { deuceCapFor } from "@/lib/scoring";
 
 // BUG-001 fix (2026-08-03): gender passthrough could violate
 // categories_gender_check (male/female/mixed/any). Normalize + whitelist.
@@ -47,7 +48,8 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const sc = scoring_config || { points_per_game: 21, best_of: 3, deuce: true, deuce_cap: 30, serve_switch: 5 };
+    const sc = scoring_config || { points_per_game: 21, best_of: 3, deuce: true, deuce_cap: deuceCapFor(21), serve_switch: 5 };
+    sc.deuce_cap = deuceCapFor(sc.points_per_game || 21);
     if (format) {
       sc.format = format;
     }
