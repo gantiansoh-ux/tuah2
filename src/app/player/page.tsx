@@ -146,12 +146,12 @@ export default function PlayerDashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ─── Header ─────────────────────── */}
-      <nav className="bg-emerald-900 text-white px-6 py-4 flex items-center justify-between">
+      <nav className="bg-emerald-900 text-white px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-hidden">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-xl font-black">TUAH</span>
           <span className="text-xs bg-emerald-700 px-2 py-0.5 rounded-full">Player</span>
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4 min-w-0">
           <button onClick={() => setTab("tournaments")}
             className={`text-sm px-3 py-1.5 rounded-lg ${tab === "tournaments" ? "bg-emerald-700 font-semibold" : "text-emerald-200 hover:text-emerald-100"}`}>
             Tournaments
@@ -166,12 +166,12 @@ export default function PlayerDashboardPage() {
           <div className="relative">
             <button
               onClick={(e) => { e.stopPropagation(); setProfileMenuOpen(!profileMenuOpen); }}
-              className="flex items-center gap-2 text-sm text-emerald-200 bg-emerald-800 px-3 py-2 rounded-lg"
+              className="flex items-center gap-2 text-sm text-emerald-200 bg-emerald-800 px-3 py-2 rounded-lg max-w-[180px]"
             >
-              <span className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-xs font-bold">
+              <span className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center text-xs font-bold shrink-0">
                 {(user.name || user.email || "U")[0].toUpperCase()}
               </span>
-              <span>{user.name || user.email}</span>
+              <span className="truncate">{user.name || user.email}</span>
             </button>
             {profileMenuOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-2 z-50">

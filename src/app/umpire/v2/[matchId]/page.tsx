@@ -60,6 +60,7 @@ export default function UmpirePadV2Page({
   const gamesRef = useRef<Game[]>([]);
   const matchRef = useRef<Match | null>(null);
   const scoreRef = useRef({ s1: 0, s2: 0 });
+  const lastScoreTapRef = useRef(0);
   useEffect(() => { gamesRef.current = games; }, [games]);
   useEffect(() => { matchRef.current = match; }, [match]);
 
@@ -410,6 +411,11 @@ export default function UmpirePadV2Page({
   }
 
   async function scorePoint(player: 1 | 2) {
+    // G11-L10/#1: debounce ghost/double-taps. A single physical tap (or an
+    // accidental 2nd tap within this window) must not post a second point.
+    const _now = Date.now();
+    if (_now - lastScoreTapRef.current < 300) return;
+    lastScoreTapRef.current = _now;
     if (!currentGame || phase === "game_over" || phase === "match_over") return;
 
     // Read LATEST score from ref (fixes rapid-click losing points due to stale closure)
@@ -956,33 +962,33 @@ export default function UmpirePadV2Page({
                     <span className="text-[7px] text-gray-400 font-bold">{entry1Name.split(" ").pop()}</span>
                     <div className="flex gap-0.5">
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "yellow_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 1 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[8px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry1Name}`}>W</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[10px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry1Name}`}>W</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "red_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 1 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-red-500" title={`Red card for ${entry1Name}`}>F</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-red-500" title={`Red card for ${entry1Name}`}>F</button>
                       <button onClick={(e) => { e.stopPropagation(); handleFault(displaySwapped ? "entry_2" : "entry_1", 1); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry1Name}`}>⚡</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry1Name}`}>⚡</button>
                     </div>
                   </div>
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[7px] text-gray-400 font-bold">{entry1Name2.split(" ").pop()}</span>
                     <div className="flex gap-0.5">
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "yellow_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 2 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[8px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry1Name2}`}>W</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[10px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry1Name2}`}>W</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "red_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 2 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-red-500" title={`Red card for ${entry1Name2}`}>F</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-red-500" title={`Red card for ${entry1Name2}`}>F</button>
                       <button onClick={(e) => { e.stopPropagation(); handleFault(displaySwapped ? "entry_2" : "entry_1", 2); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry1Name2}`}>⚡</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry1Name2}`}>⚡</button>
                     </div>
                   </div>
                 </>
               ) : (
                 <>
                   <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "yellow_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 1 }); }}
-                    className="w-9 h-9 md:w-11 md:h-11 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[10px] md:text-sm hover:bg-yellow-400 active:scale-95 shadow-lg border-2 border-yellow-600 transition-all" title="Yellow card (P1)">W</button>
+                    className="w-11 h-11 md:w-12 md:h-12 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[12px] md:text-sm hover:bg-yellow-400 active:scale-95 shadow-lg border-2 border-yellow-600 transition-all" title="Yellow card (P1)">W</button>
                   <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "red_confirm", target: displaySwapped ? "entry_2" : "entry_1", entry_player: 1 }); }}
-                    className="w-9 h-9 md:w-11 md:h-11 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-sm hover:bg-red-500 active:scale-95 shadow-lg border-2 border-red-800 transition-all" title="Red card (P1)">F</button>
+                    className="w-11 h-11 md:w-12 md:h-12 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[12px] md:text-sm hover:bg-red-500 active:scale-95 shadow-lg border-2 border-red-800 transition-all" title="Red card (P1)">F</button>
                   <button onClick={(e) => { e.stopPropagation(); handleFault(displaySwapped ? "entry_2" : "entry_1", 1); }}
-                    className="w-10 h-10 md:w-12 md:h-12 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-sm md:text-lg hover:bg-orange-400 active:scale-95 shadow-lg border-2 border-orange-600 transition-all" title="Fault (P1)">⚡</button>
+                    className="w-11 h-11 md:w-12 md:h-12 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-sm md:text-lg hover:bg-orange-400 active:scale-95 shadow-lg border-2 border-orange-600 transition-all" title="Fault (P1)">⚡</button>
                 </>
               )}
               <div className="flex flex-col items-center ml-1 md:ml-2">
@@ -1016,22 +1022,22 @@ export default function UmpirePadV2Page({
                     <span className="text-[7px] text-gray-400 font-bold">{entry2Name.split(" ").pop()}</span>
                     <div className="flex gap-0.5">
                       <button onClick={(e) => { e.stopPropagation(); handleFault(displaySwapped ? "entry_1" : "entry_2", 1); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry2Name}`}>⚡</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry2Name}`}>⚡</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "yellow_confirm", target: displaySwapped ? "entry_1" : "entry_2", entry_player: 1 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[8px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry2Name}`}>W</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[10px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry2Name}`}>W</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "red_confirm", target: displaySwapped ? "entry_1" : "entry_2", entry_player: 1 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-red-500" title={`Red card for ${entry2Name}`}>F</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-red-500" title={`Red card for ${entry2Name}`}>F</button>
                     </div>
                   </div>
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[7px] text-gray-400 font-bold">{entry2Name2.split(" ").pop()}</span>
                     <div className="flex gap-0.5">
                       <button onClick={(e) => { e.stopPropagation(); handleFault(displaySwapped ? "entry_1" : "entry_2", 2); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry2Name2}`}>⚡</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-orange-500 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-orange-400" title={`Fault - ${entry2Name2}`}>⚡</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "yellow_confirm", target: displaySwapped ? "entry_1" : "entry_2", entry_player: 2 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[8px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry2Name2}`}>W</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-yellow-500 rounded-full flex items-center justify-center font-bold text-black text-[10px] md:text-xs hover:bg-yellow-400" title={`Yellow card for ${entry2Name2}`}>W</button>
                       <button onClick={(e) => { e.stopPropagation(); setCardStep({ step: "red_confirm", target: displaySwapped ? "entry_1" : "entry_2", entry_player: 2 }); }}
-                        className="w-7 h-7 md:w-9 md:h-9 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[8px] md:text-xs hover:bg-red-500" title={`Red card for ${entry2Name2}`}>F</button>
+                        className="w-9 h-9 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center font-bold text-white text-[10px] md:text-xs hover:bg-red-500" title={`Red card for ${entry2Name2}`}>F</button>
                     </div>
                   </div>
                 </>
@@ -1074,7 +1080,7 @@ export default function UmpirePadV2Page({
               <span className="mb-0.5 md:mb-1 text-[10px] md:text-xs">🏸 <span id="shuttle-count" className="text-white">{shuttleCount}</span></span>
               <button
                 onClick={(e) => { e.stopPropagation(); handleAddShuttle(); }}
-                className="w-8 h-8 md:w-10 md:h-10 bg-gray-700 rounded-full flex items-center justify-center text-sm md:text-xl text-white active:scale-95 border border-gray-600 transition-all"
+                className="w-11 h-11 md:w-12 md:h-12 bg-gray-700 rounded-full flex items-center justify-center text-sm md:text-xl text-white active:scale-95 border border-gray-600 transition-all"
               >
                 +1
               </button>
@@ -1084,7 +1090,7 @@ export default function UmpirePadV2Page({
                 <span className="mb-0.5 md:mb-1 text-[10px] md:text-xs text-blue-400">🔵 CHAL</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleUseChallenge(displaySwapped ? 2 : 1); }}
-                  className="w-8 h-8 md:w-10 md:h-10 border-2 border-blue-500 rounded-full flex items-center justify-center text-white text-sm md:text-lg hover:bg-blue-900 active:scale-95 transition-all"
+                  className="w-11 h-11 md:w-12 md:h-12 border-2 border-blue-500 rounded-full flex items-center justify-center text-white text-sm md:text-lg hover:bg-blue-900 active:scale-95 transition-all"
                 >
                   {chal1}
                 </button>
@@ -1093,7 +1099,7 @@ export default function UmpirePadV2Page({
                 <span className="mb-0.5 md:mb-1 text-[10px] md:text-xs text-red-400">🔴 CHAL</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleUseChallenge(displaySwapped ? 1 : 2); }}
-                  className="w-8 h-8 md:w-10 md:h-10 border-2 border-red-500 rounded-full flex items-center justify-center text-white text-sm md:text-lg hover:bg-red-900 active:scale-95 transition-all"
+                  className="w-11 h-11 md:w-12 md:h-12 border-2 border-red-500 rounded-full flex items-center justify-center text-white text-sm md:text-lg hover:bg-red-900 active:scale-95 transition-all"
                 >
                   {chal2}
                 </button>

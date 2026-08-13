@@ -3,6 +3,18 @@ import { verifyToken, getCookieName } from "@/lib/auth";
 import { getPool, query, queryOne } from "@/lib/db";
 import { canControlMatch } from "@/lib/matchAuth";
 
+// G11-L10/#1: last-seen request token per game (in-memory, TTL). If the same
+// client-supplied token for the same game arrives again within a short window,
+// treat it as a duplicate (ghost/double-tap retry) and return the prior result
+// WITHOUT re-applying. This is a defensive end-to-end guard alongside the UI
+// debounce; exact-payload retries are also naturally no-op (delta 0).
+const _recentTokens = new Map<string, { at: number }>();
+const _TOKEN_TTL_MS = 30000;
+const _cleanTokens = () => {
+  const cutoff = Date.now() - _TOKEN_TTL_MS;
+  for (const [k, v] of _recentTokens) if (v.at < cutoff) _recentTokens.delete(k);
+};
+
 export async function POST(req: NextRequest) {
   // Auth required (this endpoint was previously unauthenticated!)
   const cookie = req.cookies.get(getCookieName())?.value;
@@ -16,10 +28,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { id, score_entry_1, score_entry_2, status, winner_id, current_server } = body;
+    const { id, score_entry_1, score_entry_2, status, winner_id, current_server, req_id } = body;
 
     if (!id) {
       return NextResponse.json({ error: "game id is required" }, { status: 400 });
+    }
+
+    // Idempotency: a repeat of the same (game, req_id) within TTL is a duplicate.
+    if (req_id) {
+      const key = `${id}:${req_id}`;
+      _cleanTokens();
+      if (_recentTokens.has(key)) {
+        const g = await queryOne(`SELECT id, match_id, game_number, score_1, score_2, is_complete, winner_id, current_server FROM games WHERE id = $1`, [id]);
+        return NextResponse.json({
+          duplicate: true,
+          game: g ? {
+            id: g.id, match_id: g.match_id, game_number: g.game_number,
+            score_entry_1: g.score_1, score_entry_2: g.score_2,
+            status: g.is_complete ? "completed" : (g.status || "playing"),
+            winner_id: g.winner_id, current_server: g.current_server ?? 1, created_at: g.created_at,
+          } : null,
+        });
+      }
+      _recentTokens.set(key, { at: Date.now() });
     }
 
     // Permission check: resolve the game's match, then verify control rights
