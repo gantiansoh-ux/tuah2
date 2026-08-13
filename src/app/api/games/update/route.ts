@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
 import { getPool, query, queryOne } from "@/lib/db";
 import { canControlMatch } from "@/lib/matchAuth";
+import { deuceCapFor } from "@/lib/scoring";
 
 // G11-L10/#1: last-seen request token per game (in-memory, TTL). If the same
 // client-supplied token for the same game arrives again within a short window,
@@ -64,6 +65,45 @@ export async function POST(req: NextRequest) {
     }
     const authCheck = await canControlMatch(payload.userId, payload.role, game.match_id);
     if (!authCheck.ok) return authCheck.response;
+
+    // G11D-17b/17c/17d: validate submitted scores server-side.
+    // Resolve the category's format to derive the legal deuce ceiling, so the API
+    // cannot bypass the engine cap the UI already enforces.
+    const catRow = await queryOne(
+      `SELECT c.scoring_config FROM matches m
+       JOIN categories c ON m.category_id = c.id
+       WHERE m.id = $1`,
+      [game.match_id]
+    );
+    let ppg = 21;
+    let cap = 30;
+    if (catRow?.scoring_config) {
+      try {
+        const cfg = typeof catRow.scoring_config === "string"
+          ? JSON.parse(catRow.scoring_config) : catRow.scoring_config;
+        if (cfg?.["points_per_game"]) ppg = Number(cfg["points_per_game"]);
+        cap = deuceCapFor(ppg || 21);
+      } catch { /* fall back to 21/30 */ }
+    }
+    const checkScore = (v: unknown, name: string): number | null => {
+      if (v === undefined) return null;               // field omitted OK
+      if (typeof v === "string" && v.trim() === "") return null;
+      const n = Number(v);
+      // 17d: non-numeric -> 400 (not 500)
+      if (!Number.isFinite(n) || !Number.isInteger(n)) return NaN;
+      // 17b: negative -> 400
+      if (n < 0) return -1;
+      return n;
+    };
+    for (const [k, v] of [["score_entry_1", score_entry_1], ["score_entry_2", score_entry_2]] as const) {
+      const s = checkScore(v, k);
+      if (Number.isNaN(s)) return NextResponse.json({ error: `${k} must be a non-negative integer` }, { status: 400 });
+      if (s === -1) return NextResponse.json({ error: `${k} cannot be negative` }, { status: 400 });
+      // 17c: final/immediate score cannot exceed the format's deuce ceiling
+      if (s !== null && s > cap) {
+        return NextResponse.json({ error: `${k} (${v}) exceeds the legal maximum of ${cap} for a ${ppg}-point game` }, { status: 400 });
+      }
+    }
 
     const sets: string[] = [];
     const values: any[] = [];

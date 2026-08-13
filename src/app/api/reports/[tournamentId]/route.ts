@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 // GET /api/reports/[tournamentId]?type=draw|completed
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ tournamentId: string }> }
 ) {
   const { tournamentId } = await params;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tournamentId)) {
