@@ -91,21 +91,34 @@ export async function POST(
 
     // All matches of this tournament: keep already-scheduled untouched (idempotent)
     const allMatches = await queryAll(
-      `SELECT id, match_number, court_number, scheduled_time, status FROM matches
-       WHERE tournament_id = $1 ORDER BY match_number`,
+      `SELECT id, match_number, court_number, scheduled_time, status, entry_1_id, entry_2_id
+       FROM matches WHERE tournament_id = $1 ORDER BY match_number`,
       [id]
     );
-    const emptySlots = allMatches.filter(
-      (m: any) => m.status === 'scheduled' && (m.scheduled_time === null || m.scheduled_time === undefined)
+    // G11-005: only schedule PLAYABLE matches. Later rounds / SF / Final are
+    // created with NULL entries by design (TBD); those must stay unscheduled until
+    // both participants are known.
+    const alreadyScheduled = allMatches.filter(
+      (m: any) => m.scheduled_time !== null && m.scheduled_time !== undefined
     );
-    const alreadyScheduled = allMatches.length - emptySlots.length;
+    const emptySlots = allMatches.filter(
+      (m: any) => m.status === 'scheduled'
+        && (m.scheduled_time === null || m.scheduled_time === undefined)
+        && m.entry_1_id && m.entry_2_id
+    );
+    const tbdSlots = allMatches.filter(
+      (m: any) => m.status === 'scheduled'
+        && (m.scheduled_time === null || m.scheduled_time === undefined)
+        && (!m.entry_1_id || !m.entry_2_id)
+    );
 
     if (emptySlots.length === 0) {
       return NextResponse.json({
         scheduled: 0,
-        skipped: alreadyScheduled,
+        skipped: alreadyScheduled.length,
+        tbd: tbdSlots.length,
         total: allMatches.length,
-        message: "No empty slots to schedule (all matches already have a scheduled_time)",
+        message: "No playable empty slots to schedule (all playable matches already have a scheduled_time)",
       });
     }
 
@@ -116,6 +129,36 @@ export async function POST(
         used.add(`${m.court_number}|${new Date(m.scheduled_time).toISOString()}`);
       }
     }
+    // G11-005/#3: per-time busy-player set so a single player is never on two
+    // courts at the same time. Resolve players via their entries (singles +
+    // doubles safe: both player_1_id and player_2_id are tracked).
+    const busyByTime = new Map<string, Set<string>>();
+    const touch = (tiso: string, pid: string | null | undefined) => {
+      if (!pid) return;
+      if (!busyByTime.has(tiso)) busyByTime.set(tiso, new Set());
+      busyByTime.get(tiso)!.add(pid);
+    };
+    const playerRows = await queryAll(
+      `SELECT m.scheduled_time, m.entry_1_id, m.entry_2_id,
+              e1.player_1_id AS a1, e1.player_2_id AS a2,
+              e2.player_1_id AS b1, e2.player_2_id AS b2
+       FROM matches m
+       LEFT JOIN entries e1 ON e1.id = m.entry_1_id
+       LEFT JOIN entries e2 ON e2.id = m.entry_2_id
+       WHERE m.tournament_id = $1 AND m.scheduled_time IS NOT NULL`,
+      [id]
+    );
+    for (const pm of playerRows) {
+      if (!pm.scheduled_time) continue;
+      const tiso = new Date(pm.scheduled_time).toISOString();
+      touch(tiso, pm.a1); touch(tiso, pm.a2); touch(tiso, pm.b1); touch(tiso, pm.b2);
+    }
+    const entryPlayers = async (entryId: string | null): Promise<string[]> => {
+      if (!entryId) return [];
+      const rec = await queryOne(`SELECT player_1_id, player_2_id FROM entries WHERE id = $1`, [entryId]);
+      if (!rec) return [];
+      return [rec.player_1_id, rec.player_2_id].filter(Boolean) as string[];
+    };
 
     const durationMs = matchDurationMin * 60 * 1000;
     const schedule: { match_id: string; match_number: number; court_number: number; scheduled_time: string }[] = [];
@@ -126,13 +169,21 @@ export async function POST(
     let k = 0;
     for (const m of emptySlots) {
       let placed = false;
+      const mPlayers = [
+        ...(await entryPlayers(m.entry_1_id)),
+        ...(await entryPlayers(m.entry_2_id)),
+      ];
       // keep scanning slot rows until this match fits
       while (!placed) {
         for (let c = 1; c <= numCourts; c++) {
           const t = new Date(baseTime.getTime() + k * durationMs);
           const key = `${c}|${t.toISOString()}`;
-          if (!used.has(key)) {
+          const tiso = t.toISOString();
+          const busySet = busyByTime.get(tiso);
+          const playerBusy = mPlayers.some((pid: string) => busySet && busySet.has(pid));
+          if (!used.has(key) && !playerBusy) {
             used.add(key);
+            for (const pid of mPlayers) touch(tiso, pid);
             schedule.push({
               match_id: m.id,
               match_number: m.match_number,
@@ -164,7 +215,8 @@ export async function POST(
 
     return NextResponse.json({
       scheduled: schedule.length,
-      skipped: alreadyScheduled,
+      skipped: alreadyScheduled.length,
+      tbd: tbdSlots.length,
       total: allMatches.length,
       num_courts: numCourts,
       match_duration_min: matchDurationMin,

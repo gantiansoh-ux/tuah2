@@ -207,12 +207,24 @@ export async function PATCH(
     // the same court at the same time slot (discrete slots => equality = overlap).
     const bodyCourt = body.court_number ?? body.courtNumber;
     const bodyTime = body.scheduled_time ?? body.scheduledTime;
-    if (bodyCourt !== undefined && bodyTime !== undefined) {
+    if (bodyCourt !== undefined) {
       const cur = await queryOne(
-        `SELECT tournament_id FROM matches WHERE id = $1`,
+        `SELECT m.tournament_id, t.number_of_courts FROM matches m
+         JOIN tournaments t ON m.tournament_id = t.id WHERE m.id = $1`,
         [id]
       );
-      if (cur?.tournament_id) {
+      if (cur) {
+        // G11-005/#2: court_number must be within this tournament's court count.
+        const maxCourt = Number(cur.number_of_courts) || 4;
+        const cn = Number(bodyCourt);
+        if (!Number.isInteger(cn) || cn < 1 || cn > maxCourt) {
+          return NextResponse.json(
+            { error: `court_number must be an integer between 1 and ${maxCourt} (this tournament has ${maxCourt} courts)` },
+            { status: 400 }
+          );
+        }
+      }
+      if (bodyTime !== undefined && cur?.tournament_id) {
         const clash = await queryOne(
           `SELECT id, match_number, court_number, scheduled_time FROM matches
            WHERE tournament_id = $1 AND court_number = $2 AND scheduled_time = $3 AND id != $4
