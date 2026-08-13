@@ -706,16 +706,21 @@ export default function UmpirePadV2Page({
     function getServiceArrow() {
     // The arrow shows the SHUTTLE FLIGHT DIRECTION (server -> receiver).
     // Whoever won the last point serves next, and the shuttle travels
-    // from the server's half toward the receiver's half:
-    //   - Server on LEFT half  -> shuttle travels RIGHT -> ↘️
-    //   - Server on RIGHT half -> shuttle travels LEFT  -> ↙️
-    // The arrow keeps pointing at the receiver for as long as the same
-    // player keeps serving (no blind left/right alternation per point).
+    // from the service court toward the receiver's half:
+    //   - server score EVEN -> RIGHT service court -> arrow ↘️
+    //   - server score ODD  -> LEFT service court  -> arrow ↙️
+    // The arrow flips EVERY point on the server's own score (per badminton rule),
+    // even when the same player keeps serving.
     // Determine who serves: last point winner, else current server, else player 1.
     const server = lastAction === 1 ? 1 : lastAction === 2 ? 2
       : (currentGame?.current_server === 1 ? 1 : currentGame?.current_server === 2 ? 2 : 1);
-    const serverOnLeft = (server === 1) !== displaySwapped; // entry1 is left unless sides swapped
-    return serverOnLeft ? '↘️' : '↙️';
+    // TUA9: BADMINTON service-court rule. The server serves from the RIGHT service
+    // court when their own score is EVEN and LEFT when ODD (defined by the court,
+    // not by which half the player stands on). Arrow is the shuttle direction
+    // (server -> receiver) and flips EVERY point on the server's own score even
+    // when the same player keeps serving.
+    const serverScore = server === 1 ? score1 : score2;
+    return serverScore % 2 === 0 ? '↘️' : '↙️';
   }
 
   if (phase === "loading") {

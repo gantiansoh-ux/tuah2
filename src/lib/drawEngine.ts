@@ -454,16 +454,19 @@ export function generateDoubleElimination(entries: DrawEntry[], courtCount: numb
   let lbStart = wbStart; // continues from where WB ended
   // Standard DE LB: each match count appears TWICE, halving each pair:
   // [B/4, B/4, B/8, B/8, B/16, B/16, ...] down to 1. Total = B - 2 matches.
+  // TUA10: correct LB counts. Each count appears TWICE, halving down to the
+  // terminal pair of 1s: [B/4, B/4, B/8, B/8, ..., 1, 1]. Total LB matches = B-2.
+  // KEEP BOTH trailing 1s: the last count-1 round is the LB champion match and
+  // must receive exactly [winner of the second-to-last LB round] vs [WB Final
+  // loser]. The OLD code ceil-halved and trimmed a duplicate 1, producing
+  // [2,2,1] for B=8 (5 matches) so that single final round got 3 feeders
+  // (2 LB winners + WB Final loser) -> the 3rd entrant was silently dropped
+  // (publicated disappearing LB winner). floor()-halving terminates cleanly.
   const lbCounts: number[] = [];
-  let c = Math.ceil(bracketSize / 4);
+  let c = Math.floor(bracketSize / 4);
   while (c >= 1) {
     lbCounts.push(c, c);
-    c = Math.ceil(c / 2);
-    if (lbCounts.length > 64) break; // safety
-  }
-  // Trim trailing duplicates of 1 (only one final LB round)
-  while (lbCounts.length > 1 && lbCounts[lbCounts.length - 1] === 1 && lbCounts[lbCounts.length - 2] === 1) {
-    lbCounts.pop();
+    c = Math.floor(c / 2);
   }
   let lbRI = 0;
   for (const lbCount of lbCounts) {
