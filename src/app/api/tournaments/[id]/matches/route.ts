@@ -54,6 +54,16 @@ export async function POST(
       return NextResponse.json({ error: "category_id is required" }, { status: 400 });
     }
 
+    // UAT-E-3 (2026-08-14): boundary guard — a match must never contain the same
+    // entry on both sides (self-match). Only applies when BOTH entries are supplied;
+    // a bye (one side null) is still allowed.
+    if (entry_1_id && entry_2_id && entry_1_id === entry_2_id) {
+      return NextResponse.json(
+        { error: "A match cannot contain the same entry twice" },
+        { status: 400 }
+      );
+    }
+
     // SEC-3A2-06: the category must belong to this tournament.
     const cat = await queryOne(
       "SELECT tournament_id FROM categories WHERE id = $1",
