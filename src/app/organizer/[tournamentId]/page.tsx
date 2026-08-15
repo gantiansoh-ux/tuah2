@@ -726,7 +726,34 @@ export default function TournamentDetailPage({
               <button onClick={() => setShowUmpires(true)}
                 className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
                 👤 Umpires
+                {umpireApps.filter((a: any) => a.status === "pending").length > 0 && (
+                  <span className="ml-1.5 inline-flex items-center bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-xs font-bold">
+                    {umpireApps.filter((a: any) => a.status === "pending").length} pending
+                  </span>
+                )}
               </button>
+              {/* TUA12 (2026-08-15): surface pending umpire approvals inline so a
+                  non-technical organizer doesn't have to discover the modal. */}
+              {umpireApps.filter((a: any) => a.status === "pending").length > 0 && (
+                <div className="w-full sm:w-auto bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <p className="text-sm font-semibold text-amber-800 mb-1.5">
+                    🙋 Pending umpire applications
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {umpireApps.filter((a: any) => a.status === "pending").map((a: any) => (
+                      <div key={a.id} className="flex items-center gap-2 bg-white border border-amber-200 rounded-lg px-3 py-1.5">
+                        <span className="text-sm text-gray-700 font-medium">{a.full_name}</span>
+                        <button
+                          onClick={() => handleApplication(a.id, "approve")}
+                          disabled={loadingApps}
+                          className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded-md font-semibold hover:bg-emerald-500 disabled:opacity-50">
+                          Approve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <button onClick={() => setShowQR(true)}
                 className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
                 📱 QR

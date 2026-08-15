@@ -58,6 +58,9 @@ export default function AudiencePortalPage({
   const [showRegister, setShowRegister] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  // TUA11 (2026-08-15): inline submission status so the player is not left in
+  // the dark with alert()-only feedback.
+  const [regMsg, setRegMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [view, setView] = useState<"matches" | "bracket">("matches");
   const matchesRef = useRef<Match[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -237,13 +240,20 @@ export default function AudiencePortalPage({
                 📱 QR
               </button>
               {(tournament?.status === "registration" || tournament?.status === "published" || tournament?.status === "draft") && (
-                <button onClick={() => setShowRegister(true)}
+                <button onClick={() => { setRegMsg(null); setShowRegister(true); }}
                   className="bg-white text-emerald-900 font-bold px-6 py-3 rounded-xl hover:bg-emerald-50 transition-all">
                   + Join Tournament
                 </button>
               )}
             </div>
           </div>
+
+          {/* TUA11: persistent inline registration status (not alert()-only) */}
+          {regMsg && regMsg.kind === "ok" && (
+            <div className="mt-4 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">
+              ✅ {regMsg.text}
+            </div>
+          )}
 
           {/* View switcher */}
           <div className="flex gap-2 mt-4">
@@ -321,6 +331,7 @@ export default function AudiencePortalPage({
                         return;
                       }
                       try {
+                        setRegMsg(null);
                         const res = await fetch(`/api/tournament_registrations`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
@@ -330,14 +341,17 @@ export default function AudiencePortalPage({
                           }),
                         });
                         if (res.ok) {
-                          alert("Registration submitted! Waiting for organizer approval.");
+                          setRegMsg({
+                            kind: "ok",
+                            text: "Registration submitted! Your entry is now pending organizer approval.",
+                          });
                           setShowRegister(false);
                         } else {
                           const err = await res.json();
-                          alert(err.error || "Failed to register");
+                          setRegMsg({ kind: "err", text: (err && err.error) || "Failed to register" });
                         }
                       } catch {
-                        alert("Failed to register. Please try again.");
+                        setRegMsg({ kind: "err", text: "Failed to register. Please try again." });
                       }
                     }}
                     className="bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-600">
@@ -346,6 +360,15 @@ export default function AudiencePortalPage({
                   </div>
                 )) : <p className="text-gray-400">No categories available</p>}
               </div>
+              {regMsg && (
+                <div className={`mt-3 px-4 py-3 rounded-xl text-sm font-medium ${
+                  regMsg.kind === "ok"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}>
+                  {regMsg.text}
+                </div>
+              )}
               <button onClick={() => setShowRegister(false)}
                 className="w-full mt-4 py-3 border border-gray-200 rounded-xl text-gray-600 font-medium">Cancel</button>
             </div>

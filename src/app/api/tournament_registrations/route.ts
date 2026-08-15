@@ -73,6 +73,38 @@ export async function POST(req: NextRequest) {
       [tournament_id, payload.userId, category_id || null]
     );
 
+    // TUA11 (2026-08-15): A Join-UI registration must immediately produce an
+    // `entries` row so the player is not stranded in the separate
+    // tournament_registrations silo (dual source of truth). Create the
+    // pending entry here (mirroring the organizer approve path, which
+    // de-dupes and only flips status on later approval). Payments (Phase 2)
+    // and draws attach to `entries`, so this keeps payment/draw working
+    // without waiting for organizer approval.
+    if (category_id) {
+      try {
+        const dupEntry = await queryOne(
+          `SELECT id FROM entries WHERE category_id = $1 AND player_1_id = $2 LIMIT 1`,
+          [category_id, payload.userId]
+        );
+        if (dupEntry) {
+          await query(
+            `UPDATE entries SET registration_status = 'pending', confirmed_at = NULL WHERE id = $1`,
+            [dupEntry.id]
+          );
+        } else {
+          await query(
+            `INSERT INTO entries (category_id, player_1_id, registration_status, confirmed_at)
+             VALUES ($1, $2, 'pending', NULL)`,
+            [category_id, payload.userId]
+          );
+        }
+      } catch (entryErr: any) {
+        // Registration already succeeded; do not fail the whole request if
+        // the mirroring entry could not be created.
+        console.error("Create mirror entry error:", entryErr);
+      }
+    }
+
     return NextResponse.json({ registration: result.rows[0] }, { status: 201 });
   } catch (err: any) {
     console.error("Create registration error:", err);
