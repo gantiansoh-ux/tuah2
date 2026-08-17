@@ -48,6 +48,11 @@ export default function PlayerDashboardPage() {
   const [error, setError] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [joining, setJoining] = useState<string | null>(null);
+  // ── Join-category selection (方案 A: Join must carry a category) ──
+  const [joinTournament, setJoinTournament] = useState<any>(null);   // tournament being joined
+  const [joinCategories, setJoinCategories] = useState<any[]>([]);   // its categories
+  const [joinCatId, setJoinCatId] = useState("");                    // selected category id
+  const [joinLoading, setJoinLoading] = useState(false);             // categories fetch
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -89,7 +94,36 @@ export default function PlayerDashboardPage() {
     }
   }
 
-  async function handleJoin(tournamentId: string) {
+  // Open the category-selection dialog for a tournament before joining.
+  async function openJoinCategory(t: any) {
+    if (!user) {
+      router.push("/auth/login");
+      return;
+    }
+    setJoinTournament(t);
+    setJoinCatId("");
+    setJoinCategories([]);
+    setJoinLoading(true);
+    try {
+      const res = await fetch(`/api/tournaments/${t.id}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        const cats = data.categories || [];
+        setJoinCategories(cats);
+        if (cats.length === 1) {
+          // Single category: preselect it so the player only needs one click.
+          setJoinCatId(cats[0].id);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load categories", e);
+    } finally {
+      setJoinLoading(false);
+    }
+  }
+
+  // Submit registration with the chosen category (方案 A).
+  async function handleJoin(tournamentId: string, categoryId: string) {
     if (!user) {
       router.push("/auth/login");
       return;
@@ -101,11 +135,14 @@ export default function PlayerDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tournament_id: tournamentId,
-          category_id: null,
+          category_id: categoryId || null,
         }),
       });
       if (res.ok) {
         alert("✅ Registration submitted! Waiting for organizer approval.");
+        setJoinTournament(null);
+        setJoinCatId("");
+        setJoinCategories([]);
       } else {
         const data = await res.json();
         alert(data.error || "Failed to register");
@@ -270,7 +307,7 @@ export default function PlayerDashboardPage() {
                           View
                         </Link>
                         <button
-                          onClick={() => handleJoin(t.id)}
+                          onClick={() => openJoinCategory(t)}
                           disabled={joining === t.id}
                           className="flex-1 px-3 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-600 disabled:opacity-50"
                         >
@@ -329,6 +366,60 @@ export default function PlayerDashboardPage() {
           </>
         )}
       </div>
+
+      {/* ─── Join category selection modal (方案 A) ─── */}
+      {joinTournament && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => { if (!joining) { setJoinTournament(null); setJoinCatId(""); setJoinCategories([]); } }}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-100 bg-emerald-50">
+              <h3 className="font-bold text-emerald-900">Join Tournament</h3>
+              <p className="text-sm text-emerald-700 truncate">{joinTournament.title}</p>
+            </div>
+            <div className="p-6">
+              {joinLoading ? (
+                <div className="flex items-center justify-center py-8 text-gray-400 text-sm">
+                  <span className="animate-spin w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full mr-2" />
+                  Loading categories...
+                </div>
+              ) : joinCategories.length === 0 ? (
+                <p className="text-sm text-gray-500 py-6 text-center">
+                  This tournament has no categories available to join.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Select the category you want to register for:
+                  </p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {joinCategories.map((cat) => (
+                      <label key={cat.id}
+                        className={`flex items-center gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-colors ${joinCatId === cat.id ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:bg-gray-50"}`}>
+                        <input type="radio" name="joinCat" value={cat.id}
+                          checked={joinCatId === cat.id}
+                          onChange={() => setJoinCatId(cat.id)}
+                          className="accent-emerald-700" />
+                        <span className="min-w-0">
+                          <span className="block font-semibold text-gray-900">{cat.name}</span>
+                          <span className="block text-xs text-gray-500 capitalize">{cat.type} · {cat.gender}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => handleJoin(joinTournament.id, joinCatId)}
+                    disabled={!joinCatId || joining === joinTournament.id}
+                    className="mt-4 w-full px-4 py-2.5 bg-emerald-700 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    {joining === joinTournament.id ? "Submitting..." : "Confirm Join"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
