@@ -36,6 +36,7 @@ export default function UmpireDashboardPage() {
   const [matches, setMatches] = useState<MyMatch[]>([]);
   const [rating, setRating] = useState<any>(null);
   const [applications, setApplications] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
   const [openTournaments, setOpenTournaments] = useState<OpenTournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [applyMsg, setApplyMsg] = useState<Record<string, string>>({});
@@ -54,6 +55,7 @@ export default function UmpireDashboardPage() {
         setMatches(data.matches || []);
         setRating(data.rating || null);
         setApplications(data.applications || []);
+        setInvitations(data.invitations || []);
         setOpenTournaments(data.openTournaments || []);
       }
     } catch (e) {
@@ -80,6 +82,30 @@ export default function UmpireDashboardPage() {
       } else {
         const err = await res.json();
         setToast(err.error || "Failed to apply");
+        setTimeout(() => setToast(null), 3000);
+      }
+    } catch {
+      setToast("Network error");
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  // Accept / decline an organizer invitation (two-way recruitment).
+  async function respond(inviteId: string, action: "accept" | "decline") {
+    try {
+      const res = await fetch("/api/umpires/respond", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: inviteId, action }),
+      });
+      if (res.ok) {
+        setToast(action === "accept" ? "Invitation accepted! ✅" : "Invitation declined");
+        setTimeout(() => setToast(null), 3000);
+        loadAll();
+      } else {
+        const err = await res.json();
+        setToast(err.error || "Failed to respond");
         setTimeout(() => setToast(null), 3000);
       }
     } catch {
@@ -231,6 +257,47 @@ export default function UmpireDashboardPage() {
             <div className="text-5xl mb-3">🦉</div>
             <p className="text-gray-500 font-medium">No matches assigned yet</p>
             <p className="text-sm text-gray-400 mt-1">Organizers will assign you to matches, or apply to open tournaments below.</p>
+          </div>
+        )}
+
+        {/* Invitations from organizers (two-way recruitment) */}
+        {invitations.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">📨 TOURNAMENT INVITATIONS</h3>
+            <div className="space-y-2">
+              {invitations.map((i) => (
+                <div key={i.id} className="bg-amber-50 rounded-xl border border-amber-200 p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{i.tournament_title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {i.start_date ? new Date(i.start_date).toLocaleDateString() : ""}
+                      {i.start_date && i.end_date ? " — " : ""}
+                      {i.end_date ? new Date(i.end_date).toLocaleDateString() : ""}
+                      {i.venue ? ` · ${i.venue}` : ""}
+                    </p>
+                    {i.message && <p className="text-xs text-gray-500 mt-0.5 italic">"{i.message}"</p>}
+                  </div>
+                  {i.status === "pending" ? (
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <button onClick={() => respond(i.id, "accept")}
+                        className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-emerald-500">
+                        ✓ Accept
+                      </button>
+                      <button onClick={() => respond(i.id, "decline")}
+                        className="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-medium hover:bg-gray-100">
+                        ✕ Decline
+                      </button>
+                    </div>
+                  ) : (
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ml-3 ${
+                      i.status === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"
+                    }`}>
+                      {i.status === "approved" ? "ACCEPTED" : "DECLINED"}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
