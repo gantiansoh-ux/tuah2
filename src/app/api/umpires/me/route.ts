@@ -50,13 +50,26 @@ export async function GET(req: NextRequest) {
       [uid]
     );
 
-    // My pending applications
+    // My pending applications (self-initiated: direction = 'self')
     const applications = await queryAll(
       `SELECT a.id, a.tournament_id, a.message, a.status, a.created_at, t.title AS tournament_title
        FROM umpire_applications a
        JOIN tournaments t ON a.tournament_id = t.id
-       WHERE a.umpire_id = $1
+       WHERE a.umpire_id = $1 AND a.direction = 'self'
        ORDER BY a.created_at DESC`,
+      [uid]
+    );
+
+    // Invitations received from organizers (direction = 'invite'), pending first
+    const invitations = await queryAll(
+      `SELECT a.id, a.tournament_id, a.message, a.status, a.created_at, t.title AS tournament_title,
+              t.start_date, t.end_date, t.venue
+       FROM umpire_applications a
+       JOIN tournaments t ON a.tournament_id = t.id
+       WHERE a.umpire_id = $1 AND a.direction = 'invite'
+       ORDER BY
+         CASE WHEN a.status = 'pending' THEN 0 ELSE 1 END,
+         a.created_at DESC`,
       [uid]
     );
 
@@ -72,7 +85,7 @@ export async function GET(req: NextRequest) {
        LIMIT 20`
     );
 
-    return NextResponse.json({ matches, rating, applications, openTournaments });
+    return NextResponse.json({ matches, rating, applications, invitations, openTournaments });
   } catch (err: any) {
     console.error("Umpire me error:", err);
     return NextResponse.json({ error: "Failed to load umpire data" }, { status: 500 });

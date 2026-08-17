@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     }
 
     const applications = await queryAll(
-      `SELECT a.id, a.message, a.status, a.created_at,
+      `SELECT a.id, a.message, a.status, a.created_at, a.direction,
               p.id AS umpire_id, p.full_name, p.email, p.phone,
               COALESCE(AVG(r.rating)::numeric(2,1), 0) AS avg_rating,
               COUNT(DISTINCT r.id)::int AS review_count
