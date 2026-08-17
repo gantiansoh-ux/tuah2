@@ -60,12 +60,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: gate.error }, { status: gate.status });
     }
 
-    const existing = await query(
-      `SELECT id FROM tournament_registrations WHERE tournament_id = $1 AND profile_id = $2 AND status IN ('pending', 'approved')`,
-      [tournament_id, payload.userId]
-    );
+    // Multi-category support (方案 B / Gan 2026-08-17): a player may register
+    // in MULTIPLE categories of the same tournament (e.g. singles + doubles).
+    // The duplicate check is therefore per (tournament, profile, category) —
+    // NOT per tournament. When category_id is null (older flows), keep the
+    // legacy per-tournament guard so we never dup-register the tournament.
+    const existing = category_id
+      ? await query(
+          `SELECT id FROM tournament_registrations
+           WHERE tournament_id = $1 AND profile_id = $2 AND category_id = $3
+             AND status IN ('pending', 'approved')`,
+          [tournament_id, payload.userId, category_id]
+        )
+      : await query(
+          `SELECT id FROM tournament_registrations
+           WHERE tournament_id = $1 AND profile_id = $2
+             AND status IN ('pending', 'approved')`,
+          [tournament_id, payload.userId]
+        );
     if (existing.rows.length > 0) {
-      return NextResponse.json({ error: "Already registered" }, { status: 409 });
+      return NextResponse.json({ error: "Already registered for this category" }, { status: 409 });
     }
 
     const result = await query(
