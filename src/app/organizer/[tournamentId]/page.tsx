@@ -237,6 +237,8 @@ export default function TournamentDetailPage({
   const [umpireApps, setUmpireApps] = useState<any[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
   const [ratingDraft, setRatingDraft] = useState<Record<string, { rating: number; review: string }>>({});
+  // Invite an umpire (two-way recruitment - organizer invites umpire to officiate)
+  const [invitingUmpire, setInvitingUmpire] = useState<string | null>(null);
   const [showRateModal, setShowRateModal] = useState<string | null>(null);
 
   useEffect(() => {
@@ -593,6 +595,33 @@ export default function TournamentDetailPage({
       }
     } catch {
       alert("Failed to update application");
+    }
+  }
+
+  // Invite an umpire from the All Umpires list to officiate this tournament.
+  // The umpire then accepts/declines from their dashboard (two-way recruitment).
+  async function handleInvite(umpireId: string) {
+    setInvitingUmpire(umpireId);
+    try {
+      const res = await fetch("/api/umpires/invite", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tournament_id: tournamentId, umpire_id: umpireId }),
+      });
+      if (res.ok) {
+        alert("✅ Invitation sent! The umpire will accept/decline from their dashboard.");
+        loadAll();
+        const r = await fetch("/api/umpires", { credentials: "include" });
+        if (r.ok) { const d = await r.json(); setDbUmpires(d.umpires || []); }
+      } else {
+        const err = await res.json();
+        alert("Error: " + (err.error || "Failed to send invitation"));
+      }
+    } catch {
+      alert("Failed to send invitation");
+    } finally {
+      setInvitingUmpire(null);
     }
   }
 
@@ -2063,6 +2092,10 @@ export default function TournamentDetailPage({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Umpire</span>
+                        <button onClick={() => handleInvite(u.id)} disabled={invitingUmpire === u.id}
+                          className="text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-200 font-medium disabled:opacity-50">
+                          {invitingUmpire === u.id ? "Sending..." : "📨 Invite"}
+                        </button>
                         <button onClick={() => setShowRateModal(u.id)}
                           className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
                           ✅ Rate
