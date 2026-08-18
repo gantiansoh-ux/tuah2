@@ -14,20 +14,46 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // SEC-3A2-07: the umpire directory is a public-ish listing for logged-in
-    // users — never expose email/phone PII. Keep name + aggregate stats only.
-    const umpires = await queryAll(
-      `SELECT p.id, p.full_name,
-              COALESCE(AVG(r.rating)::numeric(2,1), 0) AS avg_rating,
-              COUNT(r.id)::int AS review_count,
-              COUNT(m.id)::int AS matches_umpired
+    // Optional ?tournament_id= lets the organizer UI show, per umpire, the
+    // current invitation status (pending/accepted/declined + when it was sent)
+    // for a specific tournament. Gan 2026-08-18: two-way recruitment must show
+    // organizer-side feedback so it's clear what happened after inviting.
+    const tournamentId = req.nextUrl.searchParams.get("tournament_id");
+
+    const baseSql = `
+      SELECT p.id, p.full_name,
+             COALESCE(AVG(r.rating)::numeric(2,1), 0) AS avg_rating,
+             COUNT(DISTINCT r.id)::int AS review_count,
+             COUNT(DISTINCT m.id)::int AS matches_umpired`;
+
+    const inviteJoin = tournamentId
+      ? `,
+             (SELECT ua.status FROM umpire_applications ua
+              WHERE ua.umpire_id = p.id
+                AND ua.tournament_id = $1
+                AND ua.direction = 'invite'
+              ORDER BY ua.created_at DESC
+              LIMIT 1) AS invite_status,
+             (SELECT ua.created_at FROM umpire_applications ua
+              WHERE ua.umpire_id = p.id
+                AND ua.tournament_id = $1
+                AND ua.direction = 'invite'
+              ORDER BY ua.created_at DESC
+              LIMIT 1) AS invite_created_at`
+      : "";
+
+    const fromSql = `
        FROM profiles p
        LEFT JOIN umpire_reviews r ON r.umpire_id = p.id
        LEFT JOIN matches m ON m.umpire_id = p.id
        WHERE p.role = 'umpire' OR 'umpire' = ANY(p.roles)
        GROUP BY p.id, p.full_name
-       ORDER BY avg_rating DESC, p.full_name ASC`
-    );
+       ORDER BY avg_rating DESC, p.full_name ASC`;
+
+    const sql = baseSql + inviteJoin + fromSql;
+
+    const params = tournamentId ? [tournamentId] : [];
+    const umpires = await queryAll(sql, params);
 
     return NextResponse.json({ umpires });
   } catch (err: any) {

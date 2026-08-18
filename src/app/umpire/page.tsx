@@ -275,6 +275,9 @@ export default function UmpireDashboardPage() {
                       {i.end_date ? new Date(i.end_date).toLocaleDateString() : ""}
                       {i.venue ? ` · ${i.venue}` : ""}
                     </p>
+                    {i.created_at && (
+                      <p className="text-xs text-gray-400 mt-0.5">📨 Invited on {new Date(i.created_at).toLocaleString()}</p>
+                    )}
                     {i.message && <p className="text-xs text-gray-500 mt-0.5 italic">"{i.message}"</p>}
                   </div>
                   {i.status === "pending" ? (
@@ -310,6 +313,9 @@ export default function UmpireDashboardPage() {
                 <div key={a.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-800">{a.tournament_title}</p>
+                    {a.created_at && (
+                      <p className="text-xs text-gray-400 mt-0.5">🙋 Applied on {new Date(a.created_at).toLocaleString()}</p>
+                    )}
                     {a.message && <p className="text-xs text-gray-400 mt-0.5">"{a.message}"</p>}
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full font-medium ${

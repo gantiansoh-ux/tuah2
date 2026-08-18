@@ -545,7 +545,7 @@ export default function TournamentDetailPage({
     if (!tournamentId) return;
     let mounted = true;
     setLoadingUmpires(true);
-    fetch("/api/umpires")
+    fetch(`/api/umpires?tournament_id=${tournamentId}`)
       .then((r) => r.ok ? r.json() : { umpires: [] })
       .then((data) => {
         if (mounted) {
@@ -557,7 +557,7 @@ export default function TournamentDetailPage({
         if (mounted) setLoadingUmpires(false);
       });
     return () => { mounted = false; };
-  }, [showUmpires]);
+  }, [showUmpires, tournamentId]);
 
   // Load umpire applications for this tournament
   useEffect(() => {
@@ -612,7 +612,7 @@ export default function TournamentDetailPage({
       if (res.ok) {
         alert("✅ Invitation sent! The umpire will accept/decline from their dashboard.");
         loadAll();
-        const r = await fetch("/api/umpires", { credentials: "include" });
+        const r = await fetch(`/api/umpires?tournament_id=${tournamentId}`, { credentials: "include" });
         if (r.ok) { const d = await r.json(); setDbUmpires(d.umpires || []); }
       } else {
         const err = await res.json();
@@ -2069,6 +2069,7 @@ export default function TournamentDetailPage({
             {/* All Umpires */}
             <div>
               <h3 className="text-sm font-bold text-gray-700 mb-2">👤 All Umpires ({dbUmpires.length})</h3>
+              <p className="text-xs text-gray-400 mb-2">Invite an umpire to officiate this tournament — "Invited" means pending their reply, "Accepted" means confirmed, "Declined" means they turned it down.</p>
               {loadingUmpires ? (
                 <div className="text-center py-4 text-gray-400 animate-pulse">Loading umpires...</div>
               ) : dbUmpires.length === 0 ? (
@@ -2092,10 +2093,28 @@ export default function TournamentDetailPage({
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Umpire</span>
-                        <button onClick={() => handleInvite(u.id)} disabled={invitingUmpire === u.id}
-                          className="text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-lg hover:bg-blue-200 font-medium disabled:opacity-50">
-                          {invitingUmpire === u.id ? "Sending..." : "📨 Invite"}
-                        </button>
+                        {u.invite_status === "pending" && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium flex flex-col items-center leading-tight">
+                            ◌ Invited{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                          </span>
+                        )}
+                        {u.invite_status === "approved" && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium flex flex-col items-center leading-tight">
+                            ✓ Accepted{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                          </span>
+                        )}
+                        {u.invite_status === "rejected" && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">✕ Declined</span>
+                        )}
+                        {/* Show Invite button when never invited, or re-invite after a decline */}
+                        {(!u.invite_status || u.invite_status === "rejected") && (
+                          <button onClick={() => handleInvite(u.id)} disabled={invitingUmpire === u.id}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 ${u.invite_status === "rejected"
+                              ? "bg-red-100 text-red-600 hover:bg-red-200"
+                              : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
+                            {invitingUmpire === u.id ? "Sending..." : u.invite_status === "rejected" ? "🔁 Re-invite" : "📨 Invite"}
+                          </button>
+                        )}
                         <button onClick={() => setShowRateModal(u.id)}
                           className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
                           ✅ Rate
