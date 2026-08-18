@@ -44,6 +44,7 @@ export default function PlayerDashboardPage() {
   const [tab, setTab] = useState<"tournaments" | "matches">("tournaments");
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [matches, setMatches] = useState<MatchRecord[]>([]);
+  const [myRegistrations, setMyRegistrations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -64,6 +65,7 @@ export default function PlayerDashboardPage() {
     if (!user) return;
     loadTournaments();
     loadMatches();
+    loadMyRegistrations();
   }, [user]);
 
   async function loadTournaments() {
@@ -93,6 +95,43 @@ export default function PlayerDashboardPage() {
       console.error("Failed to load match history", err);
     }
   }
+
+  // Load the player's own registrations so we can show "✓ Joined · <date>"
+  // instead of a dead "Join" button (Gan 2026-08-19).
+  async function loadMyRegistrations() {
+    try {
+      const res = await fetch("/api/player/my-registrations", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setMyRegistrations(data.registrations || []);
+      }
+    } catch (err) {
+      console.error("Failed to load registrations", err);
+    }
+  }
+
+  // True if the player has an active (pending/approved) registration in this tournament
+  const isJoined = (tid: string) =>
+    (myRegistrations || []).some(
+      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+    );
+
+  // Earliest joined date for a tournament (for the "Joined on" timestamp)
+  const joinedDate = (tid: string) => {
+    const list = (myRegistrations || []).filter(
+      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+    );
+    if (list.length === 0) return null;
+    const dates = list.map((r) => (r.registered_at ? new Date(r.registered_at).getTime() : 0));
+    const earliest = Math.min(...dates);
+    return earliest ? new Date(earliest).toLocaleDateString() : null;
+  };
+
+  // Map tournament_id -> pending count of active registrations (to show "Joining N groups")
+  const joinedCategories = (tid: string) =>
+    (myRegistrations || []).filter(
+      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+    );
 
   // Open the category-selection dialog for a tournament before joining.
   async function openJoinCategory(t: any) {
@@ -143,6 +182,7 @@ export default function PlayerDashboardPage() {
         setJoinTournament(null);
         setJoinCatId("");
         setJoinCategories([]);
+        await loadMyRegistrations();
       } else {
         const data = await res.json();
         alert(data.error || "Failed to register");
@@ -183,7 +223,7 @@ export default function PlayerDashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ─── Header ─────────────────────── */}
-      <nav className="bg-emerald-900 text-white px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 overflow-hidden">
+      <nav className="bg-emerald-900 text-white px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-xl font-black">TUAH</span>
           <span className="text-xs bg-emerald-700 px-2 py-0.5 rounded-full">Player</span>
@@ -306,13 +346,27 @@ export default function PlayerDashboardPage() {
                         >
                           View
                         </Link>
-                        <button
-                          onClick={() => openJoinCategory(t)}
-                          disabled={joining === t.id}
-                          className="flex-1 px-3 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-600 disabled:opacity-50"
-                        >
-                          {joining === t.id ? "Joining..." : "Join"}
-                        </button>
+                        {isJoined(t.id) ? (
+                          <div className="flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                            <span className="text-xs font-bold text-emerald-700">✓ Joined</span>
+                            {joinedDate(t.id) && (
+                              <span className="text-[10px] text-emerald-600">on {joinedDate(t.id)}</span>
+                            )}
+                            {joinedCategories(t.id).length > 1 && (
+                              <span className="text-[10px] text-emerald-600">
+                                {joinedCategories(t.id).length} groups
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => openJoinCategory(t)}
+                            disabled={joining === t.id}
+                            className="flex-1 px-3 py-2 bg-emerald-700 text-white rounded-lg text-sm font-bold hover:bg-emerald-600 disabled:opacity-50"
+                          >
+                            {joining === t.id ? "Joining..." : "Join"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
