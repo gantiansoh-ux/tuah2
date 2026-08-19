@@ -116,6 +116,10 @@ export default function PlayerDashboardPage() {
       (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
     );
 
+  // Has at least one APPROVED registration (confirmed) vs still pending review
+  const hasApproved = (tid: string) =>
+    (myRegistrations || []).some((r) => r.tournament_id === tid && r.status === "approved");
+
   // Earliest joined date for a tournament (for the "Joined on" timestamp)
   const joinedDate = (tid: string) => {
     const list = (myRegistrations || []).filter(
@@ -347,13 +351,15 @@ export default function PlayerDashboardPage() {
                           View
                         </Link>
                         {isJoined(t.id) ? (
-                          <div className="flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                            <span className="text-xs font-bold text-emerald-700">✓ Joined</span>
+                          <div className={`flex-1 flex flex-col items-center justify-center gap-0.5 px-3 py-2 rounded-lg border ${hasApproved(t.id) ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"}`}>
+                            <span className={`text-xs font-bold ${hasApproved(t.id) ? "text-emerald-700" : "text-amber-700"}`}>
+                              {hasApproved(t.id) ? "✓ Joined" : "⏳ Joined · waiting approval"}
+                            </span>
                             {joinedDate(t.id) && (
-                              <span className="text-[10px] text-emerald-600">on {joinedDate(t.id)}</span>
+                              <span className={`text-[10px] ${hasApproved(t.id) ? "text-emerald-600" : "text-amber-600"}`}>on {joinedDate(t.id)}</span>
                             )}
                             {joinedCategories(t.id).length > 1 && (
-                              <span className="text-[10px] text-emerald-600">
+                              <span className={`text-[10px] ${hasApproved(t.id) ? "text-emerald-600" : "text-amber-600"}`}>
                                 {joinedCategories(t.id).length} groups
                               </span>
                             )}
