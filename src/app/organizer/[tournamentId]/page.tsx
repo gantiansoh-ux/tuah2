@@ -240,6 +240,11 @@ export default function TournamentDetailPage({
   // Invite an umpire (two-way recruitment - organizer invites umpire to officiate)
   const [invitingUmpire, setInvitingUmpire] = useState<string | null>(null);
   const [showRateModal, setShowRateModal] = useState<string | null>(null);
+  // Explicit tournament-level umpire assignment (Q1b, Gan 2026-08-19): organizer
+  // assigns an umpire to this whole tournament (optionally with working dates),
+  // which surfaces in the umpire's own dashboard as "My Tournaments".
+  const [umpAssignments, setUmpAssignments] = useState<any[]>([]);
+  const [assigningUmpire, setAssigningUmpire] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -577,6 +582,55 @@ export default function TournamentDetailPage({
       });
     return () => { mounted = false; };
   }, [showUmpires, tournamentId]);
+
+  // Load explicit tournament-level umpire assignments (Q1b, Gan 2026-08-19)
+  useEffect(() => {
+    if (!tournamentId) return;
+    let mounted = true;
+    fetch(`/api/tournaments/${tournamentId}/umpires`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : { assignments: [] })
+      .then((data) => { if (mounted) setUmpAssignments(data.assignments || []); })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, [showUmpires, tournamentId]);
+
+  // Explicitly assign an umpire to this whole tournament (Q1b)
+  async function handleAssignUmpire(umpireId: string) {
+    setAssigningUmpire(umpireId);
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/umpires`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ umpire_id: umpireId, available_dates: [] }),
+      });
+      if (res.ok) {
+        alert("✅ Umpire assigned to this tournament. It will appear in their 'My Tournaments'.");
+        const r = await fetch(`/api/tournaments/${tournamentId}/umpires`, { credentials: "include" });
+        if (r.ok) { const d = await r.json(); setUmpAssignments(d.assignments || []); }
+      } else {
+        const err = await res.json();
+        alert("Error: " + (err.error || "Failed to assign"));
+      }
+    } catch {
+      alert("Failed to assign umpire");
+    } finally {
+      setAssigningUmpire(null);
+    }
+  }
+
+  // Remove an explicit tournament-level umpire assignment (Q1b)
+  async function handleUnassignUmpire(umpireId: string) {
+    if (!confirm("Remove this umpire from the tournament assignments?")) return;
+    try {
+      await fetch(`/api/tournaments/${tournamentId}/umpires?umpire_id=${umpireId}`, {
+        method: "DELETE", credentials: "include",
+      });
+      setUmpAssignments((prev) => prev.filter((a) => a.umpire_id !== umpireId));
+    } catch {
+      alert("Failed to unassign umpire");
+    }
+  }
 
   async function handleApplication(id: string, action: "approve" | "reject") {
     try {
@@ -2129,6 +2183,17 @@ export default function TournamentDetailPage({
                           className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
                           ✅ Rate
                         </button>
+                        {umpAssignments.some((a) => a.umpire_id === u.id) ? (
+                          <button onClick={() => handleUnassignUmpire(u.id)}
+                            className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg hover:bg-emerald-200 font-medium">
+                            ✓ Assigned · remove
+                          </button>
+                        ) : (
+                          <button onClick={() => handleAssignUmpire(u.id)} disabled={assigningUmpire === u.id}
+                            className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg hover:bg-gray-200 font-medium disabled:opacity-50">
+                            {assigningUmpire === u.id ? "..." : "🎽 Assign to tournament"}
+                          </button>
+                        )}
                       </div>
                       {(Number(u.rate) > 0 || u.certification || u.license_number || Number(u.experience_years) > 0 || (Array.isArray(u.availability_days) && u.availability_days.length > 0)) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">

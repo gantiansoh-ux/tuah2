@@ -38,6 +38,7 @@ export default function UmpireDashboardPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
   const [openTournaments, setOpenTournaments] = useState<OpenTournament[]>([]);
+  const [myTournaments, setMyTournaments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [applyMsg, setApplyMsg] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export default function UmpireDashboardPage() {
         setApplications(data.applications || []);
         setInvitations(data.invitations || []);
         setOpenTournaments(data.openTournaments || []);
+        setMyTournaments(data.myTournaments || []);
       }
     } catch (e) {
       console.error(e);
@@ -191,6 +193,36 @@ export default function UmpireDashboardPage() {
                 ))}
               </div>
               <p className="text-sm text-gray-500">{rating.review_count} review(s) from organizers · best {rating.best_rating}★</p>
+            </div>
+          </div>
+        )}
+
+        {/* My Tournaments (Q1a): the real umpire must be able to FIND the
+            tournaments they officiate and open the live scoreboard. Gan 2026-08-19. */}
+        {myTournaments.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">🏆 My Tournaments</h2>
+            <div className="space-y-3">
+              {myTournaments.map((t) => (
+                <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 truncate">{t.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {t.start_date ? new Date(t.start_date).toLocaleDateString() : ""}
+                      {t.start_date && t.end_date ? " — " : ""}
+                      {t.end_date ? new Date(t.end_date).toLocaleDateString() : ""}
+                      {t.venue ? ` · ${t.venue}` : ""}
+                      {t.category_count ? ` · ${t.category_count} categories` : ""}
+                      {Number(t.my_assigned_matches) > 0 ? ` · ${t.my_assigned_matches} match(es) assigned to you` : ""}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">Status: {t.status}</p>
+                  </div>
+                  <Link href={`/scoreboard/v2/${t.id}`} target="_blank"
+                    className="shrink-0 inline-flex items-center gap-1 bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-emerald-600">
+                    📺 Live Scoreboard
+                  </Link>
+                </div>
+              ))}
             </div>
           </div>
         )}

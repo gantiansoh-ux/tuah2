@@ -86,7 +86,30 @@ export async function GET(req: NextRequest) {
        LIMIT 20`
     );
 
-    return NextResponse.json({ matches, rating, applications, invitations, openTournaments });
+    // MY TOURNAMENTS (Q1a + Q1b): this umpire's tournaments = those where they are
+    // (a) an approved/confirmed umpire via invite/apply (umpire_applications approved)
+    //    OR (b) explicitly assigned by the organizer (tournament_umpire_assignments).
+    // Gan 2026-08-19: a real umpire must be able to FIND the tournaments they officiate.
+    const myTournaments = await queryAll(
+      `SELECT t.id, t.title, t.start_date, t.end_date, t.status, t.venue,
+              COUNT(DISTINCT c.id) AS category_count,
+              COUNT(DISTINCT m.id) FILTER (WHERE m.umpire_id = $1) AS my_assigned_matches
+       FROM (
+         SELECT a.tournament_id FROM umpire_applications a
+         WHERE a.umpire_id = $1 AND a.status = 'approved'
+         UNION
+         SELECT tu.tournament_id FROM tournament_umpire_assignments tu
+         WHERE tu.umpire_id = $1
+       ) src
+       JOIN tournaments t ON t.id = src.tournament_id
+       LEFT JOIN categories c ON c.tournament_id = t.id
+       LEFT JOIN matches m ON m.tournament_id = t.id
+       GROUP BY t.id
+       ORDER BY t.start_date DESC NULLS LAST`,
+      [uid]
+    );
+
+    return NextResponse.json({ matches, rating, applications, invitations, openTournaments, myTournaments });
   } catch (err: any) {
     console.error("Umpire me error:", err);
     return NextResponse.json({ error: "Failed to load umpire data" }, { status: 500 });
