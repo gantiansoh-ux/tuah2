@@ -109,7 +109,39 @@ export async function GET(req: NextRequest) {
       [uid]
     );
 
-    return NextResponse.json({ matches, rating, applications, invitations, openTournaments, myTournaments });
+    // REDESIGN R2-F04 (Gan d2): two-tier umpire model.
+    // AVAILABLE (eligible to officiate) = matches that are currently UNASSIGNED
+    // (matches.umpire_id IS NULL) within this umpire's approved/assigned tournaments.
+    // These are NOT in the "My Matches (active)" list (which stays matches.umpire_id=me),
+    // so there is no double-count. Another umpire's assigned matches never appear here.
+    const availableMatches = await queryAll(
+      `SELECT m.id, m.round, m.match_number, m.status, m.court_number, m.scheduled_time,
+              m.entry_1_id, m.entry_2_id, m.winner_entry_id,
+              t.id AS tournament_id, t.title AS tournament_title, t.status AS tournament_status,
+              c.name AS category_name,
+              COALESCE(p1.full_name, '') AS player_1_name,
+              COALESCE(p2.full_name, '') AS player_2_name
+       FROM matches m
+       JOIN tournaments t ON m.tournament_id = t.id
+       JOIN categories c ON m.category_id = c.id
+       LEFT JOIN entries e1 ON m.entry_1_id = e1.id
+       LEFT JOIN entries e2 ON m.entry_2_id = e2.id
+       LEFT JOIN profiles p1 ON e1.player_1_id = p1.id
+       LEFT JOIN profiles p2 ON e2.player_1_id = p2.id
+       WHERE m.umpire_id IS NULL
+         AND m.status IN ('scheduled','in_progress')
+         AND m.tournament_id IN (
+           SELECT a.tournament_id FROM umpire_applications a
+           WHERE a.umpire_id = $1 AND a.status = 'approved'
+           UNION
+           SELECT tu.tournament_id FROM tournament_umpire_assignments tu
+           WHERE tu.umpire_id = $1
+         )
+       ORDER BY m.scheduled_time ASC NULLS LAST, m.match_number ASC`,
+      [uid]
+    );
+
+    return NextResponse.json({ matches, availableMatches, rating, applications, invitations, openTournaments, myTournaments });
   } catch (err: any) {
     console.error("Umpire me error:", err);
     return NextResponse.json({ error: "Failed to load umpire data" }, { status: 500 });

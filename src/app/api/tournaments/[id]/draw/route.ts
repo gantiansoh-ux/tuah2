@@ -26,7 +26,7 @@ export async function POST(
   try {
     // Verify ownership
     const tournCheck = await query(
-      `SELECT organizer_id, status, number_of_courts FROM tournaments WHERE id = $1`,
+      `SELECT organizer_id, status, number_of_courts, match_format FROM tournaments WHERE id = $1`,
       [id]
     );
     if (tournCheck.rows.length === 0) {
@@ -37,13 +37,20 @@ export async function POST(
     }
 
     const numCourts = tournCheck.rows[0].number_of_courts || 4;
+    // REDESIGN F-02 (Gan d1): single source of truth. The tournament's stored
+    // match_format is authoritative for the competition format. An explicit
+    // body.format (power-user override at draw time) still wins if provided.
+    const tournamentMatchFormat: DrawFormatType =
+      (tournCheck.rows[0].match_format as DrawFormatType) || 'knockout';
 
     // Parse request body for draw options
     const body = await req.json().catch(() => ({}));
     // #6 fix: keep requested format separate from the default so a re-draw
     // with an explicit body.format actually switches the bracket structure.
     const requestedFormat: DrawFormatType | undefined = body.format;
-    const drawFormat: DrawFormatType = body.format || 'knockout';
+    // REDESIGN F-02 (Gan d1): no silent knockout default. Resolve deterministic:
+    //   effective_format = body.format ?? tournament.match_format ?? 'knockout'
+    const drawFormat: DrawFormatType = body.format ?? tournamentMatchFormat ?? 'knockout';
     const swissRounds: number | undefined = body.swiss_rounds;
     const numGroups: number | undefined = body.groups;
     const advancePerGroup: number | undefined = body.advance;

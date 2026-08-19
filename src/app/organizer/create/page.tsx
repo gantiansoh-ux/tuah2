@@ -8,19 +8,25 @@ import { useAuth } from "@/components/AuthProvider";
 import VenuePicker from "@/components/VenuePicker";
 import Link from "next/link";
 
-// ─── Tournament Types ───────────────────────────
+// â”€â”€â”€ Tournament Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// REDESIGN F-01 (Gan d3/d4): TOURNAMENT TYPE = PURPOSE only (5 values).
+// Purpose is classification / discovery / badge ONLY in the MVP - it does NOT
+// enforce eligibility (no auto-reject by age/company/school yet) and is NOT a format.
 const TOURNAMENT_TYPES = [
-  { value: "junior", label: "Junior Tournament", icon: "🧒" },
-  { value: "open", label: "Open Tournament", icon: "🌍" },
-  { value: "school", label: "School Tournament", icon: "🏫" },
-  { value: "corporate", label: "Corporate Tournament", icon: "💼" },
-  { value: "veteran", label: "Veteran Tournament", icon: "👴" },
-  { value: "team_event", label: "Team Event", icon: "👥" },
-  { value: "league", label: "League", icon: "🏅" },
-  { value: "knockout", label: "Knockout", icon: "❌" },
-  { value: "round_robin", label: "Round Robin", icon: "🔄" },
-  { value: "ladder", label: "Ladder", icon: "🪜" },
-  { value: "festival", label: "Festival", icon: "🎪" },
+  { value: "junior", label: "Junior Tournament", icon: "ðŸ§’" },
+  { value: "open", label: "Open Tournament", icon: "ðŸŒ�" },
+  { value: "school", label: "School Tournament", icon: "ðŸ�«" },
+  { value: "corporate", label: "Corporate Tournament", icon: "ðŸ’¼" },
+  { value: "veteran", label: "Veteran Tournament", icon: "ðŸ‘´" },
+];
+
+// REDESIGN (Gan d1/d3): COMPETITION FORMAT = how it is played (match_format).
+// MVP exposes ONLY knockout + round_robin. Round Robin->Knockout (group_knockout) is
+// NOT exposed until the combined-stage workflow is proven end-to-end. League / Ladder /
+// Festival / Team Event are future products (hidden, not selectable).
+const FORMAT_OPTIONS = [
+  { value: "round_robin", label: "Round Robin", icon: "🔄", desc: "Everyone plays everyone. Point-based standings." },
+  { value: "knockout", label: "Knockout", icon: "❌", desc: "Single elimination bracket. Lose once, you are out." },
 ];
 
 const AGE_GROUPS = ["U8", "U10", "U12", "U14", "U16", "Open"];
@@ -31,7 +37,7 @@ const GENDER_TYPES = [
   { value: "any", label: "Open" },
 ];
 
-// ─── Types ──────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface WizardCategory {
   id: string;
   ageGroup: string;
@@ -49,7 +55,7 @@ interface UploadState {
   error: string;
 }
 
-// ─── Reusable FileUpload Component ──────────────
+// â”€â”€â”€ Reusable FileUpload Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function FileUpload({
   folder,
   accept,
@@ -136,7 +142,7 @@ function FileUpload({
               />
             )}
             <span className="text-sm text-gray-500 truncate max-w-[150px]">{state.filename}</span>
-            <span className="text-xs text-emerald-600 font-medium">Uploaded ✓</span>
+            <span className="text-xs text-emerald-600 font-medium">Uploaded âœ“</span>
           </div>
         )}
         {state.error && <span className="text-sm text-red-500">{state.error}</span>}
@@ -156,7 +162,7 @@ function FileUpload({
   );
 }
 
-// ─── Counter ────────────────────────────────────
+// â”€â”€â”€ Counter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let catIdCounter = 0;
 function newCat(): WizardCategory {
   catIdCounter++;
@@ -171,7 +177,7 @@ function newCat(): WizardCategory {
   };
 }
 
-// ─── Page Component ─────────────────────────────
+// â”€â”€â”€ Page Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function CreateTournamentPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -181,6 +187,8 @@ export default function CreateTournamentPage() {
 
   // Tournament type
   const [tournamentType, setTournamentType] = useState("open");
+  // REDESIGN (Gan d1): competition format written to tournaments.match_format
+  const [matchFormat, setMatchFormat] = useState("round_robin");
 
   // Basic details
   const [name, setName] = useState("");
@@ -257,6 +265,7 @@ export default function CreateTournamentPage() {
           startDate,
           endDate,
           tournamentType,
+          matchFormat,
           posterUrl: posterUrl || null,
           bannerUrl: bannerUrl || null,
           logoUrl: logoUrl || null,
@@ -299,7 +308,7 @@ export default function CreateTournamentPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-6xl mb-4">🎉</div>
+          <div className="text-6xl mb-4">ðŸŽ‰</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Tournament Created!</h2>
           <p className="text-gray-500 mb-6">Redirecting to your tournament page...</p>
           <div className="animate-spin w-6 h-6 border-4 border-emerald-500 border-t-transparent rounded-full mx-auto" />
@@ -312,14 +321,14 @@ export default function CreateTournamentPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-emerald-900 text-white px-6 py-4">
         <Link href="/organizer" className="text-sm text-emerald-200 hover:text-emerald-100">
-          ← Dashboard
+          â†� Dashboard
         </Link>
       </nav>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
         {/* Progress bar */}
         <div className="flex items-center gap-2 mb-8">
-          {[1, 2, 3, 4, 5].map((s) => (
+          {[1, 2, 3, 4, 5, 6].map((s) => (
             <div
               key={s}
               className={`flex-1 h-2 rounded-full ${
@@ -332,20 +341,23 @@ export default function CreateTournamentPage() {
         <h1 className="text-3xl font-black text-gray-900 mb-2">Create Tournament</h1>
         <p className="text-gray-500 mb-8">
           {step === 1
-            ? "Step 1: Tournament Type"
+            ? "Step 1: Tournament Purpose"
             : step === 2
-            ? "Step 2: Basic Details"
+            ? "Step 2: Competition Format"
             : step === 3
-            ? "Step 3: Media & Rules"
+            ? "Step 3: Basic Details"
             : step === 4
-            ? "Step 4: Categories"
-            : "Step 5: Review & Create"}
+            ? "Step 4: Media & Rules"
+            : step === 5
+            ? "Step 5: Categories"
+            : "Step 6: Review & Create"}
         </p>
 
-        {/* ─── STEP 1: Tournament Type ────────────────────────── */}
+        {/* â”€â”€â”€ STEP 1: Tournament Type â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {step === 1 && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Select Tournament Type</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">What type of tournament is this?</h2>
+            <p className="text-sm text-gray-500 mb-4">Choose the purpose / audience. This drives your tournament badge and discovery.</p>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {TOURNAMENT_TYPES.map((tt) => (
                 <button
@@ -359,9 +371,7 @@ export default function CreateTournamentPage() {
                   }`}
                 >
                   <span className="text-3xl">{tt.icon}</span>
-                  <span className="text-sm font-medium text-gray-700 text-center leading-tight">
-                    {tt.label}
-                  </span>
+                  <span className="text-sm font-medium text-gray-700 text-center leading-tight">{tt.label}</span>
                   {tournamentType === tt.value && (
                     <span className="text-xs text-emerald-600 font-semibold">Selected</span>
                   )}
@@ -371,8 +381,42 @@ export default function CreateTournamentPage() {
           </div>
         )}
 
-        {/* ─── STEP 2: Basic Details ──────────────────────────── */}
+        {/* REDESIGN STEP 2: Competition Format (Gan d1/d3) */}
         {step === 2 && (
+          <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">How will it be played?</h2>
+            <p className="text-sm text-gray-500 mb-4">This sets the competition format used when the draw is generated.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {FORMAT_OPTIONS.map((fo) => (
+                <button
+                  key={fo.value}
+                  type="button"
+                  onClick={() => setMatchFormat(fo.value)}
+                  className={`flex flex-col items-start gap-2 p-5 rounded-xl border-2 transition-all ${
+                    matchFormat === fo.value
+                      ? "border-emerald-500 bg-emerald-50 shadow-sm"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-3xl">{fo.icon}</span>
+                    <span className="text-base font-semibold text-gray-800">{fo.label}</span>
+                  </span>
+                  <span className="text-sm text-gray-500 text-left leading-tight">{fo.desc}</span>
+                  {matchFormat === fo.value && (
+                    <span className="text-xs text-emerald-600 font-semibold mt-1">Selected format</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 bg-gray-50 rounded-xl px-4 py-3 text-xs text-gray-500">
+              Round Robin then Knockout (group stage into elimination) is coming soon.
+            </div>
+          </div>
+        )}
+
+        {/* Basic Details is now Step 3 */}
+        {step === 3 && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -475,8 +519,8 @@ export default function CreateTournamentPage() {
           </div>
         )}
 
-        {/* ─── STEP 3: Media & Rules ──────────────────────────── */}
-        {step === 3 && (
+        {/* STEP 4: Media & Rules */}
+        {step === 4 && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm space-y-6">
             <h2 className="text-lg font-bold text-gray-900">Media & Rules</h2>
 
@@ -523,17 +567,17 @@ export default function CreateTournamentPage() {
             </div>
 
             <div className="bg-emerald-50 rounded-xl p-4">
-              <p className="text-sm text-emerald-800 font-medium">💡 Pro Tip</p>
+              <p className="text-sm text-emerald-800 font-medium">ðŸ’¡ Pro Tip</p>
               <p className="text-sm text-emerald-600 mt-1">
                 Upload high-quality images for better visibility. Posters should be at least
-                800×1200px.
+                800Ã—1200px.
               </p>
             </div>
           </div>
         )}
 
-        {/* ─── STEP 4: Categories ─────────────────────────────── */}
-        {step === 4 && (
+        {/* â”€â”€â”€ STEP 4: Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {step === 5 && (
           <div className="space-y-4">
             {categories.map((cat) => (
               <div
@@ -642,8 +686,8 @@ export default function CreateTournamentPage() {
                 <p className="text-xs text-gray-400 mt-3">
                   {cat.ageGroup}{" "}
                   {GENDER_TYPES.find((g) => g.value === cat.gender)?.label}{" "}
-                  {cat.type === "doubles" ? "Doubles" : "Singles"} · {cat.points} pts · Best of{" "}
-                  {cat.bestOf} · Deuce: {cat.deuce ? "Yes" : "No"}
+                  {cat.type === "doubles" ? "Doubles" : "Singles"} Â· {cat.points} pts Â· Best of{" "}
+                  {cat.bestOf} Â· Deuce: {cat.deuce ? "Yes" : "No"}
                 </p>
               </div>
             ))}
@@ -656,8 +700,8 @@ export default function CreateTournamentPage() {
           </div>
         )}
 
-        {/* ─── STEP 5: Review & Create ────────────────────────── */}
-        {step === 5 && (
+        {/* â”€â”€â”€ STEP 5: Review & Create â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        {step === 6 && (
           <div className="space-y-5">
             <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Review Your Tournament</h2>
@@ -668,9 +712,13 @@ export default function CreateTournamentPage() {
                   {TOURNAMENT_TYPES.find((t) => t.value === tournamentType)?.icon}
                 </span>
                 <div>
-                  <span className="text-sm text-gray-500">Type</span>
+                  <span className="text-sm text-gray-500">Purpose</span>
                   <p className="font-medium text-gray-900">
                     {TOURNAMENT_TYPES.find((t) => t.value === tournamentType)?.label}
+                  </p>
+                  <span className="text-sm text-gray-500">Format</span>
+                  <p className="font-medium text-gray-900">
+                    {FORMAT_OPTIONS.find((f) => f.value === matchFormat)?.label}
                   </p>
                 </div>
               </div>
@@ -697,7 +745,7 @@ export default function CreateTournamentPage() {
                       {venueData.venue}
                       {venueData.lat && venueData.lng && (
                         <span className="block text-xs text-gray-400 mt-1">
-                          📍 {venueData.lat.toFixed(4)}, {venueData.lng.toFixed(4)}
+                          ðŸ“� {venueData.lat.toFixed(4)}, {venueData.lng.toFixed(4)}
                         </span>
                       )}
                     </span>
@@ -706,7 +754,7 @@ export default function CreateTournamentPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-500">Dates</span>
                   <span className="font-medium text-gray-900 text-right">
-                    {startDate} → {endDate}
+                    {startDate} â†’ {endDate}
                   </span>
                 </div>
                 {registrationDeadline && (
@@ -782,7 +830,7 @@ export default function CreateTournamentPage() {
                     {c.type === "doubles" ? "Doubles" : "Singles"}
                   </span>
                   <span className="text-gray-400">
-                    {c.points}pts · BO{c.bestOf} · {c.deuce ? "Deuce on" : "No deuce"}
+                    {c.points}pts Â· BO{c.bestOf} Â· {c.deuce ? "Deuce on" : "No deuce"}
                   </span>
                 </div>
               ))}
@@ -790,24 +838,24 @@ export default function CreateTournamentPage() {
           </div>
         )}
 
-        {/* ─── Navigation Buttons ─────────────────────────────── */}
+        {/* â”€â”€â”€ Navigation Buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="flex justify-between mt-8">
           {step > 1 ? (
             <button
               onClick={() => setStep(step - 1)}
               className="px-6 py-3 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50"
             >
-              ← Back
+              â†� Back
             </button>
           ) : (
             <div />
           )}
-          {step < 5 ? (
+          {step < 6 ? (
             <button
               onClick={() => setStep(step + 1)}
               className="px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-600"
             >
-              Next →
+              Next â†’
             </button>
           ) : (
             <button
@@ -815,7 +863,7 @@ export default function CreateTournamentPage() {
               disabled={loading}
               className="px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-600 disabled:opacity-50"
             >
-              {loading ? "Creating..." : "🎉 Create Tournament"}
+              {loading ? "Creating..." : "ðŸŽ‰ Create Tournament"}
             </button>
           )}
         </div>

@@ -59,6 +59,9 @@ export async function POST(req: NextRequest) {
     const regOpen = body.regOpen || body.registration_open || null;
     const status = body.status || "draft";
     const tournamentType = body.tournamentType || body.tournament_type || null;
+    // REDESIGN F-02 (Gan d1): competition format is a first-class field written to
+    // tournaments.match_format (authoritative). Also accept body.format for compat.
+    const matchFormat = body.matchFormat || body.match_format || body.format || "knockout";
     const posterUrl = body.posterUrl || body.poster_url || null;
     const bannerUrl = body.bannerUrl || body.banner_url || null;
     const logoUrl = body.logoUrl || body.logo_url || null;
@@ -81,10 +84,25 @@ export async function POST(req: NextRequest) {
     }
 
     // #48: validate against DB CHECK constraint to avoid 500 leak
-    const validTypes = ['junior', 'open', 'school', 'corporate', 'veteran', 'team_event', 'league', 'knockout', 'round_robin', 'ladder', 'festival'];
+    // REDESIGN F-01 (Gan d1/d4): tournament_type = PURPOSE only (5 values).
+    // team_event/league/ladder/festival/knockout/round_robin are no longer valid
+    // tournament purposes (they are either competitor formats or future products).
+    const validTypes = ['junior', 'open', 'school', 'corporate', 'veteran'];
     if (!validTypes.includes(tournamentType)) {
       return NextResponse.json({
-        error: `Invalid tournament type. Must be one of: ${validTypes.join(', ')}`,
+        error: `Invalid tournament type. Purpose must be one of: ${validTypes.join(', ')}. ` +
+               `(competition format is chosen separately via matchFormat)`,
+        status: 400,
+      }, { status: 400 });
+    }
+
+    // REDESIGN F-02 (Gan d1): validate matchFormat (the authoritative format) against
+    // the tournaments.match_format CHECK constraint. MVP exposes knockout + round_robin;
+    // group_knockout accepted only when the workflow is proven (not exposed in UI).
+    const validFormats = ['knockout', 'round_robin', 'group_knockout'];
+    if (!validFormats.includes(matchFormat)) {
+      return NextResponse.json({
+        error: `Invalid competition format. Must be one of: ${validFormats.join(', ')}`,
         status: 400,
       }, { status: 400 });
     }
@@ -125,10 +143,10 @@ export async function POST(req: NextRequest) {
 
       // Create tournament
       const tResult = await client.query(
-        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, registration_open, status, tournament_type, poster_url, banner_url, logo_url, rules, prize, entry_fee, number_of_courts)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        `INSERT INTO tournaments (organizer_id, title, description, venue, venue_lat, venue_lng, start_date, end_date, registration_deadline, registration_open, status, tournament_type, match_format, poster_url, banner_url, logo_url, rules, prize, entry_fee, number_of_courts)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          RETURNING *`,
-        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, regOpen, status || "draft", tournamentType, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee, number_of_courts]
+        [payload.userId, name, description, venue, venueLat, venueLng, startDate, endDate, regClose, regOpen, status || "draft", tournamentType, matchFormat, posterUrl, bannerUrl, logoUrl, rules, prize, entryFee, number_of_courts]
       );
 
       const tournament = tResult.rows[0];

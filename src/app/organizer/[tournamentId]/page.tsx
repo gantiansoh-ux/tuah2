@@ -11,9 +11,9 @@ import { deuceCapFor } from "@/lib/scoring";
 
 import BracketView from "@/components/BracketView";
 
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 // HELPERS
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 const STATUS_STYLES: Record<string, string> = {
   draft: "bg-gray-100 text-gray-600",
   registration: "bg-blue-100 text-blue-700",
@@ -84,9 +84,9 @@ function enrichWithScores(matches: any[], games: any[]): any[] {
   });
 }
 
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 // MODAL COMPONENTS
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 function Modal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
@@ -101,9 +101,9 @@ function Modal({ children, onClose, title }: { children: React.ReactNode; onClos
   );
 }
 
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 // PAGE COMPONENT
-// ————————————————————————————————————————————
+// â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”â€”
 // P1-006: inline court/time editor for a single match (organizer only)
 function toLocalInput(iso: string): string {
   const d = new Date(iso);
@@ -184,18 +184,18 @@ export default function TournamentDetailPage({
   const [activeTab, setActiveTab] = useState<"overview" | "entries" | "draw" | "matches" | "registration">("overview");
   const [loading, setLoading] = useState(true);
 
-  // — Authorization: only tournament owner or admin can see this page
+  // â€” Authorization: only tournament owner or admin can see this page
   //   This runs AFTER loadAll() completes so we have tournament data
   useEffect(() => {
     if (!loading && tournament && user) {
       if (tournament.organizer_id !== user.id && user.role !== 'admin') {
-        console.warn("Access denied — not tournament owner");
+        console.warn("Access denied â€” not tournament owner");
         router.push("/");
       }
     }
   }, [loading, tournament, user]);
 
-  // —— Modal states ——
+  // â€”â€” Modal states â€”â€”
   const [showEdit, setShowEdit] = useState(false);
   const [showAddCat, setShowAddCat] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -203,7 +203,7 @@ export default function TournamentDetailPage({
   const [showQR, setShowQR] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // —— Form states ——
+  // â€”â€” Form states â€”â€”
   const [editForm, setEditForm] = useState({ title: "", description: "", venue: "", start_date: "", end_date: "", number_of_courts: 4 });
   const [catForm, setCatForm] = useState({ name: "", gender: "male", age: "Open", type: "singles", points: 21, bestOf: 3, deuce: true, format: "knockout" });
   const [importCSV, setImportCSV] = useState("");
@@ -228,7 +228,7 @@ export default function TournamentDetailPage({
   const [drawOptions, setDrawOptions] = useState<Record<string, number>>({});
   const [showDrawOptions, setShowDrawOptions] = useState(false);
 
-  // Umpire management — fetched from database
+  // Umpire management â€” fetched from database
   const [showUmpires, setShowUmpires] = useState(false);
   const [dbUmpires, setDbUmpires] = useState<any[]>([]);
   const [newUmpireName, setNewUmpireName] = useState("");
@@ -266,6 +266,13 @@ export default function TournamentDetailPage({
       if (!res.ok) throw new Error("Failed to load");
       const data = await res.json();
       setTournament(data.tournament);
+      // REDESIGN F-02 (Gan d1): single source of truth. Default the draw-format picker
+      // to the tournament's authoritative match_format (not hardcoded 'knockout'), so an
+      // organizer who chose Round Robin at creation gets a Round Robin draw by default.
+      // They can still override via the picker before generating.
+      if (data.tournament?.match_format) {
+        setDrawFormat(data.tournament.match_format);
+      }
       setCategories(data.categories || []);
       setEntries(data.entries || []);
       setMatches(data.matches || []);
@@ -422,7 +429,7 @@ export default function TournamentDetailPage({
 
   async function generateDraw() {
     if (!tournament || categories.length === 0) return;
-    if (matches.length > 0 && !confirm("⚠️ A draw already exists for this tournament.\n\nRegenerating will DELETE all existing matches and create new ones based on the selected format. This cannot be undone.\n\nClick OK to continue.")) {
+    if (matches.length > 0 && !confirm("âš ï¸� A draw already exists for this tournament.\n\nRegenerating will DELETE all existing matches and create new ones based on the selected format. This cannot be undone.\n\nClick OK to continue.")) {
       return;
     }
     setGeneratingDraw(true);
@@ -605,7 +612,7 @@ export default function TournamentDetailPage({
         body: JSON.stringify({ umpire_id: umpireId, available_dates: [] }),
       });
       if (res.ok) {
-        alert("✅ Umpire assigned to this tournament. It will appear in their 'My Tournaments'.");
+        alert("âœ… Umpire assigned to this tournament. It will appear in their 'My Tournaments'.");
         const r = await fetch(`/api/tournaments/${tournamentId}/umpires`, { credentials: "include" });
         if (r.ok) { const d = await r.json(); setUmpAssignments(d.assignments || []); }
       } else {
@@ -664,7 +671,7 @@ export default function TournamentDetailPage({
         body: JSON.stringify({ tournament_id: tournamentId, umpire_id: umpireId }),
       });
       if (res.ok) {
-        alert("✅ Invitation sent! The umpire will accept/decline from their dashboard.");
+        alert("âœ… Invitation sent! The umpire will accept/decline from their dashboard.");
         loadAll();
         const r = await fetch(`/api/umpires?tournament_id=${tournamentId}`, { credentials: "include" });
         if (r.ok) { const d = await r.json(); setDbUmpires(d.umpires || []); }
@@ -698,7 +705,7 @@ export default function TournamentDetailPage({
         }),
       });
       if (res.ok) {
-        alert("Rating submitted! ✅");
+        alert("Rating submitted! âœ…");
         setShowRateModal(null);
         const r = await fetch("/api/umpires", { credentials: "include" });
         if (r.ok) {
@@ -714,7 +721,7 @@ export default function TournamentDetailPage({
     }
   }
 
-  // —— Render ——
+  // â€”â€” Render â€”â€”
   if (authLoading || loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full" /></div>;
   if (!user || !tournament) return null;
 
@@ -724,7 +731,7 @@ export default function TournamentDetailPage({
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-emerald-900 text-white px-6 py-4 flex items-center justify-between">
-        <Link href="/organizer" className="text-sm text-emerald-200 hover:text-emerald-100">→ Dashboard</Link>
+        <Link href="/organizer" className="text-sm text-emerald-200 hover:text-emerald-100">â†’ Dashboard</Link>
         <div className="flex items-center gap-3">
           {pendingRegs.length > 0 && isOwner && (
             <button onClick={() => setActiveTab("registration")}
@@ -737,7 +744,7 @@ export default function TournamentDetailPage({
       </nav>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-        {/* ══════ HEADER ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� HEADER â•�â•�â•�â•�â•�â•� */}
         <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm mb-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
@@ -746,11 +753,11 @@ export default function TournamentDetailPage({
                 <span className={`px-3 py-1 rounded-full text-xs font-bold ${STATUS_STYLES[tournament.status] || "bg-gray-100 text-gray-600"}`}>
                   {STATUS_LABELS[tournament.status] || tournament.status}
                 </span>
-                {tournament.venue && <span className="text-sm text-gray-400">📍 {tournament.venue}</span>}
+                {tournament.venue && <span className="text-sm text-gray-400">ðŸ“� {tournament.venue}</span>}
                 <span className="text-sm text-gray-400">
-                  {fmtLocalDate(tournament.start_date)}{tournament.end_date ? ` → ${fmtLocalDate(tournament.end_date)}` : ""}
+                  {fmtLocalDate(tournament.start_date)}{tournament.end_date ? ` â†’ ${fmtLocalDate(tournament.end_date)}` : ""}
                 </span>
-                <span className="text-sm text-gray-400">· {entries.length} players · {categories.length} cats</span>
+                <span className="text-sm text-gray-400">Â· {entries.length} players Â· {categories.length} cats</span>
               </div>
               {tournament.description && <p className="text-gray-500 mt-3 text-sm">{tournament.description}</p>}
               {/* Poster / Banner / Logo thumbnails */}
@@ -777,7 +784,7 @@ export default function TournamentDetailPage({
                 <>
                   <button onClick={openEdit}
                     className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
-                    ✔️ Edit
+                    âœ”ï¸� Edit
                   </button>
                   <button onClick={() => setShowAddCat(true)}
                     className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
@@ -789,7 +796,7 @@ export default function TournamentDetailPage({
                   </button>
                   <button onClick={() => setShowImport(true)}
                     className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
-                    📥 CSV
+                    ðŸ“¥ CSV
                   </button>
 
                   {tournament.status === "draft" && (
@@ -801,14 +808,14 @@ export default function TournamentDetailPage({
                   {(tournament.status === "registration" || tournament.status === "published" || tournament.status === "in_progress") && entries.length >= 2 && (
                     <button onClick={generateDraw} disabled={generatingDraw}
                       className="bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 disabled:opacity-50">
-                      {generatingDraw ? "..." : "🎲 Generate Draw"}
+                      {generatingDraw ? "..." : "ðŸŽ² Generate Draw"}
                     </button>
                   )}
                 </>
               )}
               <button onClick={() => setShowUmpires(true)}
                 className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
-                👤 Umpires
+                ðŸ‘¤ Umpires
                 {umpireApps.filter((a: any) => a.status === "pending").length > 0 && (
                   <span className="ml-1.5 inline-flex items-center bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full text-xs font-bold">
                     {umpireApps.filter((a: any) => a.status === "pending").length} pending
@@ -820,7 +827,7 @@ export default function TournamentDetailPage({
               {umpireApps.filter((a: any) => a.status === "pending").length > 0 && (
                 <div className="w-full sm:w-auto bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                   <p className="text-sm font-semibold text-amber-800 mb-1.5">
-                    🙋 Pending umpire applications
+                    ðŸ™‹ Pending umpire applications
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {umpireApps.filter((a: any) => a.status === "pending").map((a: any) => (
@@ -839,16 +846,16 @@ export default function TournamentDetailPage({
               )}
               <button onClick={() => setShowQR(true)}
                 className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
-                📱 QR
+                ðŸ“± QR
               </button>
               <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/tournament/${tournamentId}`)}
                 className="border border-gray-200 text-gray-600 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-gray-50">
-                🔗 Link
+                ðŸ”— Link
               </button>
               {isOwner && tournament.status === "draft" && (
                 <button onClick={() => setShowDeleteConfirm(true)}
                   className="border border-red-200 text-red-500 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-red-50">
-                  🗑 Delete
+                  ðŸ—‘ Delete
                 </button>
               )}
             </div>
@@ -872,7 +879,7 @@ export default function TournamentDetailPage({
 
 
 
-        {/* ══════ TABS ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TABS â•�â•�â•�â•�â•�â•� */}
         <div className="flex gap-1 bg-white rounded-xl p-1 border border-gray-100 shadow-sm mb-6 overflow-x-auto">
           {[
             { key: "overview", label: "Overview" },
@@ -890,7 +897,7 @@ export default function TournamentDetailPage({
           ))}
         </div>
 
-        {/* ══════ TAB: OVERVIEW ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TAB: OVERVIEW â•�â•�â•�â•�â•�â•� */}
         {activeTab === "overview" && (
           <div className="space-y-6">
             <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
@@ -929,7 +936,7 @@ export default function TournamentDetailPage({
                       <div>
                         <span className="font-medium text-gray-900">{cat.name}</span>
                         <span className="text-sm text-gray-400 ml-3">
-                          {cat.type} · {cat.scoring_config?.points_per_game || 21}pts BO{cat.scoring_config?.best_of || 3}
+                          {cat.type} Â· {cat.scoring_config?.points_per_game || 21}pts BO{cat.scoring_config?.best_of || 3}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -950,7 +957,7 @@ export default function TournamentDetailPage({
             {/* Quick actions */}
             {isOwner && categories.length === 0 && (
               <div className="bg-amber-50 rounded-2xl p-6 border border-amber-200">
-                <p className="text-amber-800 font-medium">📋 No categories yet</p>
+                <p className="text-amber-800 font-medium">ðŸ“‹ No categories yet</p>
                 <p className="text-amber-600 text-sm mt-1">Add categories so players can register for their events.</p>
                 <button onClick={() => setShowAddCat(true)}
                   className="mt-3 bg-amber-600 text-white px-5 py-2 rounded-xl font-medium text-sm hover:bg-amber-500">
@@ -961,18 +968,18 @@ export default function TournamentDetailPage({
 
             {isOwner && categories.length > 0 && entries.length === 0 && tournament.status === "draft" && (
               <div className="bg-blue-50 rounded-2xl p-6 border border-blue-200">
-                <p className="text-blue-800 font-medium">👥 No players yet</p>
+                <p className="text-blue-800 font-medium">ðŸ‘¥ No players yet</p>
                 <p className="text-blue-600 text-sm mt-1">Import players via CSV or add them one by one. Then publish & generate draw.</p>
                 <button onClick={() => setShowImport(true)}
                   className="mt-3 bg-blue-600 text-white px-5 py-2 rounded-xl font-medium text-sm hover:bg-blue-500">
-                  📥 Import Players
+                  ðŸ“¥ Import Players
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* ══════ TAB: ENTRIES ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TAB: ENTRIES â•�â•�â•�â•�â•�â•� */}
         {activeTab === "entries" && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -985,7 +992,7 @@ export default function TournamentDetailPage({
                   </button>
                   <button onClick={() => setShowImport(true)}
                     className="text-sm border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50">
-                    📥 CSV
+                    ðŸ“¥ CSV
                   </button>
                 </div>
               )}
@@ -1054,7 +1061,7 @@ export default function TournamentDetailPage({
                             <button onClick={() => deleteEntry(e.id)}
                               className="text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
                               title="Remove entry">
-                              🗑
+                              ðŸ—‘
                             </button>
                           </td>
                         )}
@@ -1065,7 +1072,7 @@ export default function TournamentDetailPage({
               </table>
             ) : (
               <div className="text-center py-12 text-gray-400">
-                <div className="text-4xl mb-2">👥</div>
+                <div className="text-4xl mb-2">ðŸ‘¥</div>
                 <p>No players entered yet.</p>
                 {isOwner && (
                   <button onClick={() => setShowImport(true)}
@@ -1078,7 +1085,7 @@ export default function TournamentDetailPage({
           </div>
         )}
 
-        {/* ══════ TAB: DRAW ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TAB: DRAW â•�â•�â•�â•�â•�â•� */}
         {activeTab === "draw" && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -1088,11 +1095,11 @@ export default function TournamentDetailPage({
                   <>
                     <button onClick={() => setShowDrawOptions(!showDrawOptions)}
                       className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
-                      🎯 {showDrawOptions ? 'Hide Options' : 'Draw Options'}
+                      ðŸŽ¯ {showDrawOptions ? 'Hide Options' : 'Draw Options'}
                     </button>
                     <button onClick={generateDraw} disabled={generatingDraw}
                       className="bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 disabled:opacity-50">
-                      {generatingDraw ? "Generating..." : matches.length > 0 ? "🔄 Regenerate" : "🎲 Generate Draw"}
+                      {generatingDraw ? "Generating..." : matches.length > 0 ? "ðŸ”„ Regenerate" : "ðŸŽ² Generate Draw"}
                     </button>
                   </>
                 )}
@@ -1214,7 +1221,7 @@ export default function TournamentDetailPage({
                 <div className="mt-4 flex gap-3">
                   <button onClick={() => { setShowDrawOptions(false); generateDraw(); }} disabled={generatingDraw}
                     className="bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-emerald-600 disabled:opacity-50">
-                    {generatingDraw ? "Generating..." : `🎲 Generate ${drawFormat.replace(/_/g, ' ')} Draw`}
+                    {generatingDraw ? "Generating..." : `ðŸŽ² Generate ${drawFormat.replace(/_/g, ' ')} Draw`}
                   </button>
                   {matches.length > 0 && (
                     <button onClick={() => setShowDrawOptions(false)}
@@ -1228,7 +1235,7 @@ export default function TournamentDetailPage({
 
             {matches.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <div className="text-4xl mb-2">🎲</div>
+                <div className="text-4xl mb-2">ðŸŽ²</div>
                 <p>Draw not generated yet.</p>
                 {entries.length < 2 && <p className="text-sm mt-1">Need at least 2 players per category.</p>}
                 {entries.length >= 2 && isOwner && tournament.status === "draft" && (
@@ -1291,9 +1298,9 @@ export default function TournamentDetailPage({
                           <div className="space-y-6">
                             {Array.from(groups.entries()).map(([groupKey, groupMatches]) => {
                               const groupLabel =
-                                groupKey === 'winners' ? '🏆 Winners Bracket' :
-                                groupKey === 'losers' ? '🔄 Losers Bracket' :
-                                groupKey === 'grand_final' ? '🏅 Grand Final' :
+                                groupKey === 'winners' ? 'ðŸ�† Winners Bracket' :
+                                groupKey === 'losers' ? 'ðŸ”„ Losers Bracket' :
+                                groupKey === 'grand_final' ? 'ðŸ�… Grand Final' :
                                 groupKey;
                               return (
                                 <div key={groupKey}>
@@ -1394,7 +1401,7 @@ export default function TournamentDetailPage({
                                             </div>
                                             {m.status === 'completed' && (
                                               <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                                {entries.find((e: any) => e.id === m.winner_entry_id) ? getPlayerName(entries.find((e: any) => e.id === m.winner_entry_id)) : ''} ✓
+                                                {entries.find((e: any) => e.id === m.winner_entry_id) ? getPlayerName(entries.find((e: any) => e.id === m.winner_entry_id)) : ''} âœ“
                                               </span>
                                             )}
                                           </div>
@@ -1407,15 +1414,15 @@ export default function TournamentDetailPage({
                                 {koMatches.length > 0 && (
                                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                                     <div className="flex items-center justify-between mb-2">
-                                      <h4 className="text-sm font-bold text-gray-600">🏆 Knockout Stage</h4>
+                                      <h4 className="text-sm font-bold text-gray-600">ðŸ�† Knockout Stage</h4>
                                       {koInfo?.awaiting && (
                                         <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full animate-pulse">
-                                          ⏳ Awaiting group results…
+                                          â�³ Awaiting group resultsâ€¦
                                         </span>
                                       )}
                                       {koInfo && !koInfo.awaiting && allFilled && (
                                         <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                                          ✅ Bracket set
+                                          âœ… Bracket set
                                         </span>
                                       )}
                                     </div>
@@ -1497,8 +1504,8 @@ export default function TournamentDetailPage({
                                   {entries.find((e: any) => e.id === m.entry_2_id) ? getPlayerName(entries.find((e: any) => e.id === m.entry_2_id)) : "TBD"}
                                 </span>
                                 <div className="flex gap-2 text-xs text-gray-400 ml-1">
-                                  {m.scheduled_time && <span>🗓 {new Date(m.scheduled_time).toLocaleString()}</span>}
-                                  {m.court_name && <span>🏸 {m.court_name}</span>}
+                                  {m.scheduled_time && <span>ðŸ—“ {new Date(m.scheduled_time).toLocaleString()}</span>}
+                                  {m.court_name && <span>ðŸ�¸ {m.court_name}</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
@@ -1524,7 +1531,7 @@ export default function TournamentDetailPage({
           </div>
         )}
 
-        {/* ══════ TAB: LIVE MATCHES ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TAB: LIVE MATCHES â•�â•�â•�â•�â•�â•� */}
         {activeTab === "matches" && (
           <div className="bg-white rounded-2xl p-8 border border-gray-100 shadow-sm">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Live Matches</h2>
@@ -1542,7 +1549,7 @@ export default function TournamentDetailPage({
             )}
             {matches.filter((m: any) => m.status === "playing" || m.status === "scheduled").length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <div className="text-4xl mb-2">🎯</div>
+                <div className="text-4xl mb-2">ðŸŽ¯</div>
                 <p>No active matches. Generate a draw first.</p>
               </div>
             ) : (
@@ -1564,8 +1571,8 @@ export default function TournamentDetailPage({
                             <span className="font-medium text-gray-900">
                               {entries.find((e: any) => e.id === m.entry_2_id) ? getPlayerName(entries.find((e: any) => e.id === m.entry_2_id)) : "TBD"}
                             </span>
-                            {m.court_name && <span className="text-xs text-gray-400 ml-2">· {m.court_name}</span>}
-                            {m.scheduled_time && <span className="text-xs text-gray-400">🗓 {new Date(m.scheduled_time).toLocaleString()}</span>}
+                            {m.court_name && <span className="text-xs text-gray-400 ml-2">Â· {m.court_name}</span>}
+                            {m.scheduled_time && <span className="text-xs text-gray-400">ðŸ—“ {new Date(m.scheduled_time).toLocaleString()}</span>}
                             {isOwner && (
                               <select
                                 value={m.umpire_id || ''}
@@ -1586,14 +1593,14 @@ export default function TournamentDetailPage({
                                 ))}
                               </select>
                             )}
-                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">👤 {m.umpire_id}</span>}
+                            {!isOwner && m.umpire_id && <span className="text-xs text-gray-400">ðŸ‘¤ {m.umpire_id}</span>}
                             {isOwner && (
                               <MatchCourtEditor match={m} onSaved={loadAll} />
                             )}
                           </div>
                           <Link href={`/umpire/v2/${m.id}`}
                             className="text-sm bg-emerald-700 text-white px-4 py-2 rounded-lg hover:bg-emerald-600">
-                            {m.status === "playing" ? "Open Umpire Pad →" : "Score →"}
+                            {m.status === "playing" ? "Open Umpire Pad â†’" : "Score â†’"}
                           </Link>
                         </div>
                       ))}
@@ -1605,7 +1612,7 @@ export default function TournamentDetailPage({
           </div>
         )}
 
-        {/* ══════ TAB: REGISTRATIONS ══════ */}
+        {/* â•�â•�â•�â•�â•�â•� TAB: REGISTRATIONS â•�â•�â•�â•�â•�â•� */}
         {activeTab === "registration" && (
           <div className="space-y-4">
             {/* Stats Row */}
@@ -1642,7 +1649,7 @@ export default function TournamentDetailPage({
             {entries.filter((e: any) => e.registration_status).length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100 bg-emerald-50">
-                  <h3 className="font-bold text-emerald-800">📍 Online Registrations</h3>
+                  <h3 className="font-bold text-emerald-800">ðŸ“� Online Registrations</h3>
                 </div>
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-gray-500">
@@ -1662,14 +1669,14 @@ export default function TournamentDetailPage({
                       return (
                         <tr key={entry.id} className="border-t border-gray-50 hover:bg-gray-50">
                           <td className="px-6 py-3 font-medium text-gray-900">{getPlayerName(entry)}</td>
-                          <td className="px-6 py-3 text-gray-500">{cat?.name || "—"}</td>
+                          <td className="px-6 py-3 text-gray-500">{cat?.name || "â€”"}</td>
                           <td className="px-6 py-3">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                               entry.registration_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                               entry.registration_status === 'approved' ? 'bg-green-100 text-green-700' :
                               'bg-red-100 text-red-700'
                             }`}>
-                              {entry.registration_status || '—'}
+                              {entry.registration_status || 'â€”'}
                             </span>
                           </td>
                           <td className="px-6 py-3">
@@ -1699,12 +1706,12 @@ export default function TournamentDetailPage({
                                   title="View Student Card">Stud</a>
                               )}
                               {!entry.ic_document_url && !entry.passport_url && !entry.student_card_url && (
-                                <span className="text-xs text-gray-300">—</span>
+                                <span className="text-xs text-gray-300">â€”</span>
                               )}
                             </div>
                           </td>
                           <td className="px-6 py-3 text-xs text-gray-400">
-                            {entry.confirmed_at ? new Date(entry.confirmed_at).toLocaleDateString() : '—'}
+                            {entry.confirmed_at ? new Date(entry.confirmed_at).toLocaleDateString() : 'â€”'}
                           </td>
                           {isOwner && (
                             <td className="px-6 py-3 text-right">
@@ -1723,7 +1730,7 @@ export default function TournamentDetailPage({
                                     } catch (err) { console.error(err); loadAll(); }
                                   }}
                                     className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200">
-                                    ✅ Approve
+                                    âœ… Approve
                                   </button>
                                   <button onClick={async () => {
                                     setEntries((prev: any[]) =>
@@ -1738,15 +1745,15 @@ export default function TournamentDetailPage({
                                     } catch (err) { console.error(err); loadAll(); }
                                   }}
                                     className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-lg hover:bg-red-200">
-                                    ❌ Reject
+                                    â�Œ Reject
                                   </button>
                                 </div>
                               )}
                               {entry.registration_status === 'approved' && (
-                                <span className="text-xs text-green-500 font-medium">✔️ Approved</span>
+                                <span className="text-xs text-green-500 font-medium">âœ”ï¸� Approved</span>
                               )}
                               {entry.registration_status === 'rejected' && (
-                                <span className="text-xs text-red-400 font-medium">✘ Rejected</span>
+                                <span className="text-xs text-red-400 font-medium">âœ˜ Rejected</span>
                               )}
                             </td>
                           )}
@@ -1781,9 +1788,9 @@ export default function TournamentDetailPage({
                     {registrations.map((reg: any) => (
                       <tr key={reg.id} className="border-t border-gray-50 hover:bg-gray-50">
                         <td className="px-6 py-3 font-medium text-gray-900">{reg.player_name || reg.profile_id?.slice(0, 8)}</td>
-                        <td className="px-6 py-3 text-gray-500">—</td>
+                        <td className="px-6 py-3 text-gray-500">â€”</td>
                         <td className="px-6 py-3 text-gray-400 text-xs">
-                          {fmtLocalDate(reg.registered_at) || fmtLocalDate(reg.registration_date) || "—"}
+                          {fmtLocalDate(reg.registered_at) || fmtLocalDate(reg.registration_date) || "â€”"}
                         </td>
                         <td className="px-6 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -1797,9 +1804,9 @@ export default function TournamentDetailPage({
                             {reg.status === "pending" && (
                               <div className="flex gap-2 justify-end">
                                 <button onClick={() => approveRegistration(reg.id)}
-                                  className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200">✅ Approve</button>
+                                  className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200">âœ… Approve</button>
                                 <button onClick={() => rejectRegistration(reg.id)}
-                                  className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-lg hover:bg-red-200">❌ Reject</button>
+                                  className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-lg hover:bg-red-200">â�Œ Reject</button>
                               </div>
                             )}
                           </td>
@@ -1814,7 +1821,7 @@ export default function TournamentDetailPage({
             {/* Empty State */}
             {entries.filter((e: any) => e.registration_status).length === 0 && registrations.length === 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm text-center py-12 text-gray-400">
-                <div className="text-4xl mb-2">📍</div>
+                <div className="text-4xl mb-2">ðŸ“�</div>
                 <p>No registrations yet. Share the tournament link for players to sign up.</p>
                 <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/tournament/${tournamentId}/register`)}
                   className="mt-4 bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-600">
@@ -1826,11 +1833,11 @@ export default function TournamentDetailPage({
         )}
       </div>
 
-      {/* ════════════════════════════════════════ */}
+      {/* â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•� */}
       {/* MODALS */}
-      {/* ════════════════════════════════════════ */}
+      {/* â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•�â•� */}
 
-      {/* —— Edit Tournament —— */}
+      {/* â€”â€” Edit Tournament â€”â€” */}
       {showEdit && (
         <Modal title="Edit Tournament" onClose={() => setShowEdit(false)}>
           <form onSubmit={saveEdit} className="space-y-4">
@@ -1876,7 +1883,7 @@ export default function TournamentDetailPage({
         </Modal>
       )}
 
-      {/* —— Add Category —— */}
+      {/* â€”â€” Add Category â€”â€” */}
       {showAddCat && (
         <Modal title="Add Category" onClose={() => setShowAddCat(false)}>
           <div className="space-y-4">
@@ -1960,7 +1967,7 @@ export default function TournamentDetailPage({
         </Modal>
       )}
 
-      {/* —— Import CSV —— */}
+      {/* â€”â€” Import CSV â€”â€” */}
       {showImport && (
         <Modal title="Import Players (CSV)" onClose={() => setShowImport(false)}>
           <form onSubmit={doImport} className="space-y-4">
@@ -1996,7 +2003,7 @@ export default function TournamentDetailPage({
         </Modal>
       )}
 
-      {/* —— QR Code —— */}
+      {/* â€”â€” QR Code â€”â€” */}
       {showQR && (
         <Modal title="Tournament QR Code" onClose={() => setShowQR(false)}>
           <div className="text-center">
@@ -2021,11 +2028,11 @@ export default function TournamentDetailPage({
         </Modal>
       )}
 
-      {/* —— Delete Confirmation —— */}
+      {/* â€”â€” Delete Confirmation â€”â€” */}
       {showDeleteConfirm && (
         <Modal title="Delete Tournament?" onClose={() => setShowDeleteConfirm(false)}>
           <div className="text-center">
-            <div className="text-5xl mb-4">⚠️</div>
+            <div className="text-5xl mb-4">âš ï¸�</div>
             <p className="text-gray-700 mb-2 font-medium">This action cannot be undone.</p>
             <p className="text-sm text-gray-500 mb-6">
               All categories, entries, and matches will be permanently deleted.
@@ -2056,7 +2063,7 @@ export default function TournamentDetailPage({
         </Modal>
       )}
 
-      {/* —— Umpire Management —— */}
+      {/* â€”â€” Umpire Management â€”â€” */}
       {showUmpires && (
         <Modal title="Manage Umpires" onClose={() => setShowUmpires(false)}>
           <div className="space-y-5">
@@ -2065,7 +2072,7 @@ export default function TournamentDetailPage({
             {/* Umpire Applications */}
             <div>
               <h3 className="text-sm font-bold text-gray-700 mb-2">
-                📥 Umpire Applications
+                ðŸ“¥ Umpire Applications
                 {umpireApps.filter((a) => a.status === "pending").length > 0 && (
                   <span className="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
                     {umpireApps.filter((a) => a.status === "pending").length} pending
@@ -2076,7 +2083,7 @@ export default function TournamentDetailPage({
                 <div className="text-center py-4 text-gray-400 animate-pulse">Loading applications...</div>
               ) : umpireApps.length === 0 ? (
                 <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-3">
-                  No applications yet. Share this tournament with umpires — they can apply from their dashboard.
+                  No applications yet. Share this tournament with umpires â€” they can apply from their dashboard.
                 </p>
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -2087,15 +2094,15 @@ export default function TournamentDetailPage({
                           <p className="text-sm font-semibold text-gray-800">
                             {a.full_name}
                             {a.avg_rating > 0 && (
-                              <span className="ml-2 text-xs text-amber-600 font-medium">✅ {a.avg_rating} ({a.review_count})</span>
+                              <span className="ml-2 text-xs text-amber-600 font-medium">âœ… {a.avg_rating} ({a.review_count})</span>
                             )}
                           </p>
                           <p className="text-xs text-gray-400">{a.email}</p>
                           {a.message && <p className="text-xs text-gray-500 mt-1 italic">"{a.message}"</p>}
                           {a.direction === "invite" ? (
-                            <p className="text-xs text-amber-600 font-medium mt-1">📨 Organizer invitation — waiting for umpire's reply</p>
+                            <p className="text-xs text-amber-600 font-medium mt-1">ðŸ“¨ Organizer invitation â€” waiting for umpire's reply</p>
                           ) : (
-                            <p className="text-xs text-gray-400 font-medium mt-1">📥 Umpire self-application</p>
+                            <p className="text-xs text-gray-400 font-medium mt-1">ðŸ“¥ Umpire self-application</p>
                           )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -2103,16 +2110,16 @@ export default function TournamentDetailPage({
                             <>
                               <button onClick={() => handleApplication(a.id, "approve")}
                                 className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 font-medium">
-                                ✓ Approve
+                                âœ“ Approve
                               </button>
                               <button onClick={() => handleApplication(a.id, "reject")}
                                 className="text-xs bg-red-100 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-200 font-medium">
-                                ✕ Reject
+                                âœ• Reject
                               </button>
                             </>
                           ) : a.status === "pending" && a.direction === "invite" ? (
                             <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
-                              ⏳ Awaiting umpire
+                              â�³ Awaiting umpire
                             </span>
                           ) : (
                             <span className={`text-xs px-2 py-1 rounded-full font-medium ${
@@ -2131,13 +2138,13 @@ export default function TournamentDetailPage({
 
             {/* All Umpires */}
             <div>
-              <h3 className="text-sm font-bold text-gray-700 mb-2">👤 All Umpires ({dbUmpires.length})</h3>
-              <p className="text-xs text-gray-400 mb-2">Invite an umpire to officiate this tournament — "Invited" means pending their reply, "Accepted" means confirmed, "Declined" means they turned it down.</p>
+              <h3 className="text-sm font-bold text-gray-700 mb-2">ðŸ‘¤ All Umpires ({dbUmpires.length})</h3>
+              <p className="text-xs text-gray-400 mb-2">Invite an umpire to officiate this tournament â€” "Invited" means pending their reply, "Accepted" means confirmed, "Declined" means they turned it down.</p>
               {loadingUmpires ? (
                 <div className="text-center py-4 text-gray-400 animate-pulse">Loading umpires...</div>
               ) : dbUmpires.length === 0 ? (
                 <div className="text-center py-6 text-gray-400">
-                  <div className="text-3xl mb-2">👤</div>
+                  <div className="text-3xl mb-2">ðŸ‘¤</div>
                   <p className="text-sm">No umpires found in the database.</p>
                 </div>
               ) : (
@@ -2149,7 +2156,7 @@ export default function TournamentDetailPage({
                         <span className="text-sm text-gray-700 font-medium truncate">{u.full_name}</span>
                         {u.email && <span className="text-xs text-gray-400 hidden sm:inline">({u.email})</span>}
                         {u.avg_rating > 0 && (
-                          <span className="text-xs text-amber-600 font-medium shrink-0">✅ {u.avg_rating}</span>
+                          <span className="text-xs text-amber-600 font-medium shrink-0">âœ… {u.avg_rating}</span>
                         )}
                         {u.matches_umpired > 0 && (
                           <span className="text-xs text-gray-400 shrink-0">({u.matches_umpired} matches)</span>
@@ -2159,16 +2166,16 @@ export default function TournamentDetailPage({
                         <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Umpire</span>
                         {u.invite_status === "pending" && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium flex flex-col items-center leading-tight">
-                            ◌ Invited{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                            â—Œ Invited{u.invite_created_at ? ` Â· ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
                           </span>
                         )}
                         {u.invite_status === "approved" && (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium flex flex-col items-center leading-tight">
-                            ✓ Accepted{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                            âœ“ Accepted{u.invite_created_at ? ` Â· ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
                           </span>
                         )}
                         {u.invite_status === "rejected" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">✕ Declined</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">âœ• Declined</span>
                         )}
                         {/* Show Invite button when never invited, or re-invite after a decline */}
                         {(!u.invite_status || u.invite_status === "rejected") && (
@@ -2176,35 +2183,35 @@ export default function TournamentDetailPage({
                             className={`text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 ${u.invite_status === "rejected"
                               ? "bg-red-100 text-red-600 hover:bg-red-200"
                               : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
-                            {invitingUmpire === u.id ? "Sending..." : u.invite_status === "rejected" ? "🔁 Re-invite" : "📨 Invite"}
+                            {invitingUmpire === u.id ? "Sending..." : u.invite_status === "rejected" ? "ðŸ”� Re-invite" : "ðŸ“¨ Invite"}
                           </button>
                         )}
                         <button onClick={() => setShowRateModal(u.id)}
                           className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
-                          ✅ Rate
+                          âœ… Rate
                         </button>
                         {umpAssignments.some((a) => a.umpire_id === u.id) ? (
                           <button onClick={() => handleUnassignUmpire(u.id)}
                             className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg hover:bg-emerald-200 font-medium">
-                            ✓ Assigned · remove
+                            âœ“ Assigned Â· remove
                           </button>
                         ) : (
                           <button onClick={() => handleAssignUmpire(u.id)} disabled={assigningUmpire === u.id}
                             className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg hover:bg-gray-200 font-medium disabled:opacity-50">
-                            {assigningUmpire === u.id ? "..." : "🎽 Assign to tournament"}
+                            {assigningUmpire === u.id ? "..." : "ðŸŽ½ Assign to tournament"}
                           </button>
                         )}
                       </div>
                       {(Number(u.rate) > 0 || u.certification || u.license_number || Number(u.experience_years) > 0 || (Array.isArray(u.availability_days) && u.availability_days.length > 0)) && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                           {Number(u.rate) > 0 && (
-                            <span className="font-semibold text-emerald-700">💰 RM{u.rate}/hr</span>
+                            <span className="font-semibold text-emerald-700">ðŸ’° RM{u.rate}/hr</span>
                           )}
-                          {u.certification && <span>🎓 {u.certification}</span>}
-                          {u.license_number && <span>📜 {u.license_number}</span>}
-                          {Number(u.experience_years) > 0 && <span>⏳ {u.experience_years} yrs</span>}
+                          {u.certification && <span>ðŸŽ“ {u.certification}</span>}
+                          {u.license_number && <span>ðŸ“œ {u.license_number}</span>}
+                          {Number(u.experience_years) > 0 && <span>â�³ {u.experience_years} yrs</span>}
                           {Array.isArray(u.availability_days) && u.availability_days.length > 0 && (
-                            <span title={u.availability_days.join(", ")}>📅 {u.availability_days.join(", ")}</span>
+                            <span title={u.availability_days.join(", ")}>ðŸ“… {u.availability_days.join(", ")}</span>
                           )}
                         </div>
                       )}
@@ -2232,7 +2239,7 @@ export default function TournamentDetailPage({
                 <button key={s}
                   onClick={() => setRatingDraft((d) => ({ ...d, [showRateModal]: { ...(d[showRateModal] || { rating: 0, review: "" }), rating: s } }))}
                   className={`text-3xl transition-all ${(ratingDraft[showRateModal]?.rating || 0) >= s ? "text-amber-400 scale-110" : "text-gray-200 hover:text-amber-200"}`}>
-                  ★
+                  â˜…
                 </button>
               ))}
             </div>
@@ -2262,7 +2269,7 @@ export default function TournamentDetailPage({
         <Modal title="Self-Registration Only" onClose={() => setShowAddPlayer(false)}>
           <div className="space-y-4">
             <div className="bg-blue-50 rounded-xl p-6 text-center">
-              <div className="text-4xl mb-3">🚫</div>
+              <div className="text-4xl mb-3">ðŸš«</div>
               <h3 className="text-lg font-bold text-gray-900 mb-2">Players Must Register Themselves</h3>
               <p className="text-sm text-gray-600 mb-4">
                 Share the tournament link so players can sign up. You can approve them from the Registrations tab.

@@ -34,6 +34,9 @@ interface OpenTournament {
 export default function UmpireDashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const [matches, setMatches] = useState<MyMatch[]>([]);
+  // REDESIGN R2-F04 (Gan d2): matches in my approved tournaments that are still
+  // UNASSIGNED (eligible to officiate once the organizer assigns them).
+  const [availableMatches, setAvailableMatches] = useState<MyMatch[]>([]);
   const [rating, setRating] = useState<any>(null);
   const [applications, setApplications] = useState<any[]>([]);
   const [invitations, setInvitations] = useState<any[]>([]);
@@ -54,6 +57,7 @@ export default function UmpireDashboardPage() {
       if (res.ok) {
         const data = await res.json();
         setMatches(data.matches || []);
+        setAvailableMatches(data.availableMatches || []);
         setRating(data.rating || null);
         setApplications(data.applications || []);
         setInvitations(data.invitations || []);
@@ -78,7 +82,7 @@ export default function UmpireDashboardPage() {
         }),
       });
       if (res.ok) {
-        setToast("Application submitted! ✅");
+        setToast("Application submitted! âœ…");
         setTimeout(() => setToast(null), 3000);
         loadAll();
       } else {
@@ -102,7 +106,7 @@ export default function UmpireDashboardPage() {
         body: JSON.stringify({ id: inviteId, action }),
       });
       if (res.ok) {
-        setToast(action === "accept" ? "Invitation accepted! ✅" : "Invitation declined");
+        setToast(action === "accept" ? "Invitation accepted! âœ…" : "Invitation declined");
         setTimeout(() => setToast(null), 3000);
         loadAll();
       } else {
@@ -131,7 +135,7 @@ export default function UmpireDashboardPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-3xl p-10 shadow-xl max-w-sm w-full text-center">
-          <div className="text-6xl mb-4">👤</div>
+          <div className="text-6xl mb-4">ðŸ‘¤</div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Umpire Sign In</h1>
           <p className="text-gray-500 mb-6">Sign in with your umpire account to see your assigned matches.</p>
           <Link href="/auth/login" className="block w-full bg-emerald-700 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 mb-3">
@@ -157,18 +161,18 @@ export default function UmpireDashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-emerald-900 text-white px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-xl">🦉</span>
+          <span className="text-xl">ðŸ¦‰</span>
           <span className="font-bold">Umpire Dashboard</span>
         </div>
         <div className="flex items-center gap-3">
           {rating && rating.review_count > 0 && (
             <span className="text-sm bg-emerald-800 px-3 py-1 rounded-full">
-              ⭐ {rating.avg_rating} ({rating.review_count})
+              â­� {rating.avg_rating} ({rating.review_count})
             </span>
           )}
           <span className="text-sm text-emerald-200">{user.email}</span>
-          <Link href="/umpire/profile" className="text-sm bg-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-700 font-medium">⚙️ Profile & Availability</Link>
-          <Link href="/" className="text-sm text-emerald-200 hover:text-emerald-100">← Home</Link>
+          <Link href="/umpire/profile" className="text-sm bg-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-700 font-medium">âš™ï¸� Profile & Availability</Link>
+          <Link href="/" className="text-sm text-emerald-200 hover:text-emerald-100">â†� Home</Link>
         </div>
       </nav>
 
@@ -189,10 +193,10 @@ export default function UmpireDashboardPage() {
             <div className="flex-1">
               <div className="flex items-center gap-1 mb-1">
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <span key={s} className={`text-2xl ${s <= Math.round(rating.avg_rating) ? "text-amber-400" : "text-gray-200"}`}>★</span>
+                  <span key={s} className={`text-2xl ${s <= Math.round(rating.avg_rating) ? "text-amber-400" : "text-gray-200"}`}>â˜…</span>
                 ))}
               </div>
-              <p className="text-sm text-gray-500">{rating.review_count} review(s) from organizers · best {rating.best_rating}★</p>
+              <p className="text-sm text-gray-500">{rating.review_count} review(s) from organizers Â· best {rating.best_rating}â˜…</p>
             </div>
           </div>
         )}
@@ -201,7 +205,7 @@ export default function UmpireDashboardPage() {
             tournaments they officiate and open the live scoreboard. Gan 2026-08-19. */}
         {myTournaments.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">🏆 My Tournaments</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">ðŸ�† My Tournaments</h2>
             <div className="space-y-3">
               {myTournaments.map((t) => (
                 <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center justify-between gap-3">
@@ -209,17 +213,17 @@ export default function UmpireDashboardPage() {
                     <p className="font-semibold text-gray-900 truncate">{t.title}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {t.start_date ? new Date(t.start_date).toLocaleDateString() : ""}
-                      {t.start_date && t.end_date ? " — " : ""}
+                      {t.start_date && t.end_date ? " â€” " : ""}
                       {t.end_date ? new Date(t.end_date).toLocaleDateString() : ""}
-                      {t.venue ? ` · ${t.venue}` : ""}
-                      {t.category_count ? ` · ${t.category_count} categories` : ""}
-                      {Number(t.my_assigned_matches) > 0 ? ` · ${t.my_assigned_matches} match(es) assigned to you` : ""}
+                      {t.venue ? ` Â· ${t.venue}` : ""}
+                      {t.category_count ? ` Â· ${t.category_count} categories` : ""}
+                      {Number(t.my_assigned_matches) > 0 ? ` Â· ${t.my_assigned_matches} match(es) assigned to you` : ""}
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">Status: {t.status}</p>
                   </div>
                   <Link href={`/scoreboard/v2/${t.id}`} target="_blank"
                     className="shrink-0 inline-flex items-center gap-1 bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-emerald-600">
-                    📺 Live Scoreboard
+                    ðŸ“º Live Scoreboard
                   </Link>
                 </div>
               ))}
@@ -227,8 +231,30 @@ export default function UmpireDashboardPage() {
           </div>
         )}
 
+        {/* REDESIGN R2-F04 (Gan d2): Available Matches — matches in my approved tournaments
+            that are not yet assigned to anyone. Once the organizer assigns a match to me,
+            it moves into My Matches (active) below. No double count; another umpire's
+            assigned match never shows here. */}
+        {availableMatches.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">ðŸ“‹ Available in Your Tournaments</h2>
+            <p className="text-sm text-gray-500 mb-3">These matches in your tournament are not yet assigned to an umpire. Ask the organizer to assign one to you to open the scoring pad.</p>
+            <div className="space-y-2">
+              {availableMatches.map((m) => (
+                <div key={m.id} className="bg-emerald-50/50 rounded-xl border border-emerald-200 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{m.player_1_name || "TBD"} <span className="text-gray-400">vs</span> {m.player_2_name || "TBD"}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{m.tournament_title} Â· {m.category_name} Â· {m.round}{m.court_number ? ` Â· Court ${m.court_number}` : ""}</p>
+                  </div>
+                  <span className="shrink-0 text-xs font-semibold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">Unassigned</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Assigned Matches */}
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">🎯 My Matches</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">ðŸŽ¯ My Matches</h2>
 
         {live.length > 0 && (
           <div className="mb-6">
@@ -239,11 +265,11 @@ export default function UmpireDashboardPage() {
               <div key={m.id} className="bg-white rounded-2xl shadow-sm border-l-4 border-red-500 p-4 mb-3 flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">{m.player_1_name || "TBD"} <span className="text-gray-400">vs</span> {m.player_2_name || "TBD"}</p>
-                  <p className="text-xs text-gray-400 mt-1">{m.tournament_title} · {m.category_name} · {m.round}{m.court_number ? ` · Court ${m.court_number}` : ""}</p>
+                  <p className="text-xs text-gray-400 mt-1">{m.tournament_title} Â· {m.category_name} Â· {m.round}{m.court_number ? ` Â· Court ${m.court_number}` : ""}</p>
                 </div>
                 <Link href={`/umpire/v2/${m.id}`}
                   className="bg-red-500 text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-red-600">
-                  ▶ Open Pad
+                  â–¶ Open Pad
                 </Link>
               </div>
             ))}
@@ -257,7 +283,7 @@ export default function UmpireDashboardPage() {
               <div key={m.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-3 flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-gray-900">{m.player_1_name || "TBD"} <span className="text-gray-400">vs</span> {m.player_2_name || "TBD"}</p>
-                  <p className="text-xs text-gray-400 mt-1">{m.tournament_title} · {m.category_name} · {m.round}{m.scheduled_time ? ` · ${new Date(m.scheduled_time).toLocaleString()}` : ""}</p>
+                  <p className="text-xs text-gray-400 mt-1">{m.tournament_title} Â· {m.category_name} Â· {m.round}{m.scheduled_time ? ` Â· ${new Date(m.scheduled_time).toLocaleString()}` : ""}</p>
                 </div>
                 <Link href={`/umpire/v2/${m.id}`}
                   className="bg-emerald-700 text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-emerald-600">
@@ -274,7 +300,7 @@ export default function UmpireDashboardPage() {
             <div className="space-y-2">
               {done.map((m) => (
                 <div key={m.id} className="bg-white rounded-xl border border-gray-100 p-3 flex items-center justify-between">
-                  <p className="text-sm text-gray-600">{m.tournament_title} · {m.category_name} · {m.round}</p>
+                  <p className="text-sm text-gray-600">{m.tournament_title} Â· {m.category_name} Â· {m.round}</p>
                   <p className="text-sm font-semibold text-gray-800">
                     {m.player_1_name || "?"} <span className="text-gray-300">vs</span> {m.player_2_name || "?"}
                   </p>
@@ -286,7 +312,7 @@ export default function UmpireDashboardPage() {
 
         {matches.length === 0 && (
           <div className="bg-white rounded-2xl border border-dashed border-gray-300 p-10 text-center mb-8">
-            <div className="text-5xl mb-3">🦉</div>
+            <div className="text-5xl mb-3">ðŸ¦‰</div>
             <p className="text-gray-500 font-medium">No matches assigned yet</p>
             <p className="text-sm text-gray-400 mt-1">Organizers will assign you to matches, or apply to open tournaments below.</p>
           </div>
@@ -295,7 +321,7 @@ export default function UmpireDashboardPage() {
         {/* Invitations from organizers (two-way recruitment) */}
         {invitations.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">📨 TOURNAMENT INVITATIONS</h3>
+            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">ðŸ“¨ TOURNAMENT INVITATIONS</h3>
             <div className="space-y-2">
               {invitations.map((i) => (
                 <div key={i.id} className="bg-amber-50 rounded-xl border border-amber-200 p-3 flex items-center justify-between">
@@ -303,10 +329,10 @@ export default function UmpireDashboardPage() {
                     <p className="text-sm font-medium text-gray-800">{i.tournament_title}</p>
                     <p className="text-xs text-gray-400 mt-0.5">
                       {i.start_date ? new Date(i.start_date).toLocaleDateString() : ""}
-                      {i.start_date && i.end_date ? " — " : ""}
+                      {i.start_date && i.end_date ? " â€” " : ""}
                       {i.end_date ? new Date(i.end_date).toLocaleDateString() : ""}
-                      {i.venue ? ` · ${i.venue}` : ""}
-                      {i.category_count ? ` · ${i.category_count} categories` : ""}
+                      {i.venue ? ` Â· ${i.venue}` : ""}
+                      {i.category_count ? ` Â· ${i.category_count} categories` : ""}
                     </p>
                     {i.description && (
                       <p className="text-xs text-gray-500 mt-1 line-clamp-2">{i.description}</p>
@@ -314,11 +340,11 @@ export default function UmpireDashboardPage() {
                     {i.tournament_id && (
                       <Link href={`/tournament/${i.tournament_id}`} target="_blank"
                         className="inline-block mt-1.5 text-xs text-emerald-700 font-semibold hover:text-emerald-600 underline underline-offset-2">
-                        🔍 View tournament details →
+                        ðŸ”� View tournament details â†’
                       </Link>
                     )}
                     {i.created_at && (
-                      <p className="text-xs text-gray-400 mt-0.5">📨 Invited on {new Date(i.created_at).toLocaleString()}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">ðŸ“¨ Invited on {new Date(i.created_at).toLocaleString()}</p>
                     )}
                     {i.message && <p className="text-xs text-gray-500 mt-0.5 italic">"{i.message}"</p>}
                   </div>
@@ -326,11 +352,11 @@ export default function UmpireDashboardPage() {
                     <div className="flex items-center gap-2 shrink-0 ml-3">
                       <button onClick={() => respond(i.id, "accept")}
                         className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-emerald-500">
-                        ✓ Accept
+                        âœ“ Accept
                       </button>
                       <button onClick={() => respond(i.id, "decline")}
                         className="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-medium hover:bg-gray-100">
-                        ✕ Decline
+                        âœ• Decline
                       </button>
                     </div>
                   ) : (
@@ -356,7 +382,7 @@ export default function UmpireDashboardPage() {
                   <div>
                     <p className="text-sm font-medium text-gray-800">{a.tournament_title}</p>
                     {a.created_at && (
-                      <p className="text-xs text-gray-400 mt-0.5">🙋 Applied on {new Date(a.created_at).toLocaleString()}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">ðŸ™‹ Applied on {new Date(a.created_at).toLocaleString()}</p>
                     )}
                     {a.message && <p className="text-xs text-gray-400 mt-0.5">"{a.message}"</p>}
                   </div>
@@ -375,10 +401,10 @@ export default function UmpireDashboardPage() {
         {/* Open Tournaments - apply */}
         {openTournaments.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-1">📋 Open Tournaments</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-1">ðŸ“‹ Open Tournaments</h2>
             <p className="text-sm text-gray-400 mb-4">
               {isUmpire
-                ? "Apply to umpire these tournaments — organizers will review your application."
+                ? "Apply to umpire these tournaments â€” organizers will review your application."
                 : "Your account is not set as an umpire. Switch your role or register an umpire account to apply."}
             </p>
             <div className="space-y-3">
@@ -390,15 +416,15 @@ export default function UmpireDashboardPage() {
                       <div>
                         <p className="font-semibold text-gray-900">{t.title}</p>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {t.status} · {t.category_count} categor{t.category_count === 1 ? "y" : "ies"}
-                          {t.start_date ? ` · ${new Date(t.start_date).toLocaleDateString()}` : ""}
+                          {t.status} Â· {t.category_count} categor{t.category_count === 1 ? "y" : "ies"}
+                          {t.start_date ? ` Â· ${new Date(t.start_date).toLocaleDateString()}` : ""}
                         </p>
                       </div>
                       {applied ? (
-                        <span className="text-xs px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 font-medium">⏳ Applied</span>
+                        <span className="text-xs px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 font-medium">â�³ Applied</span>
                       ) : !isUmpire ? (
                         <span className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-500 font-medium" title="Only umpire accounts can apply">
-                          🔒 Umpire account required
+                          ðŸ”’ Umpire account required
                         </span>
                       ) : (
                         <div className="flex items-center gap-2">
