@@ -2038,9 +2038,14 @@ export default function TournamentDetailPage({
                           </p>
                           <p className="text-xs text-gray-400">{a.email}</p>
                           {a.message && <p className="text-xs text-gray-500 mt-1 italic">"{a.message}"</p>}
+                          {a.direction === "invite" ? (
+                            <p className="text-xs text-amber-600 font-medium mt-1">📨 Organizer invitation — waiting for umpire's reply</p>
+                          ) : (
+                            <p className="text-xs text-gray-400 font-medium mt-1">📥 Umpire self-application</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {a.status === "pending" ? (
+                          {a.status === "pending" && a.direction === "self" ? (
                             <>
                               <button onClick={() => handleApplication(a.id, "approve")}
                                 className="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 font-medium">
@@ -2051,6 +2056,10 @@ export default function TournamentDetailPage({
                                 ✕ Reject
                               </button>
                             </>
+                          ) : a.status === "pending" && a.direction === "invite" ? (
+                            <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
+                              ⏳ Awaiting umpire
+                            </span>
                           ) : (
                             <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                               a.status === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"
@@ -2080,7 +2089,8 @@ export default function TournamentDetailPage({
               ) : (
                 <div className="max-h-60 overflow-y-auto space-y-1">
                   {dbUmpires.map((u: any) => (
-                    <div key={u.id} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg">
+                    <div key={u.id} className="px-3 py-2 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm text-gray-700 font-medium truncate">{u.full_name}</span>
                         {u.email && <span className="text-xs text-gray-400 hidden sm:inline">({u.email})</span>}
@@ -2119,6 +2129,20 @@ export default function TournamentDetailPage({
                           className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
                           ✅ Rate
                         </button>
+                      </div>
+                      {(Number(u.rate) > 0 || u.certification || u.license_number || Number(u.experience_years) > 0 || (Array.isArray(u.availability_days) && u.availability_days.length > 0)) && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                          {Number(u.rate) > 0 && (
+                            <span className="font-semibold text-emerald-700">💰 RM{u.rate}/hr</span>
+                          )}
+                          {u.certification && <span>🎓 {u.certification}</span>}
+                          {u.license_number && <span>📜 {u.license_number}</span>}
+                          {Number(u.experience_years) > 0 && <span>⏳ {u.experience_years} yrs</span>}
+                          {Array.isArray(u.availability_days) && u.availability_days.length > 0 && (
+                            <span title={u.availability_days.join(", ")}>📅 {u.availability_days.join(", ")}</span>
+                          )}
+                        </div>
+                      )}
                       </div>
                     </div>
                   ))}

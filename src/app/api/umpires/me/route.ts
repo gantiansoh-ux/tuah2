@@ -63,7 +63,8 @@ export async function GET(req: NextRequest) {
     // Invitations received from organizers (direction = 'invite'), pending first
     const invitations = await queryAll(
       `SELECT a.id, a.tournament_id, a.message, a.status, a.created_at, t.title AS tournament_title,
-              t.start_date, t.end_date, t.venue
+              t.start_date, t.end_date, t.venue, t.description, t.status AS tournament_status,
+              (SELECT COUNT(*)::int FROM categories c WHERE c.tournament_id = t.id) AS category_count
        FROM umpire_applications a
        JOIN tournaments t ON a.tournament_id = t.id
        WHERE a.umpire_id = $1 AND a.direction = 'invite'

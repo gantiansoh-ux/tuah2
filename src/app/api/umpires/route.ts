@@ -24,7 +24,12 @@ export async function GET(req: NextRequest) {
       SELECT p.id, p.full_name,
              COALESCE(AVG(r.rating)::numeric(2,1), 0) AS avg_rating,
              COUNT(DISTINCT r.id)::int AS review_count,
-             COUNT(DISTINCT m.id)::int AS matches_umpired`;
+             COUNT(DISTINCT m.id)::int AS matches_umpired,
+             COALESCE(NULLIF(up.certification, ''), '') AS certification,
+             COALESCE(NULLIF(up.license_number, ''), '') AS license_number,
+             COALESCE(up.experience_years, 0) AS experience_years,
+             COALESCE(up.availability->>'rate', '') AS rate,
+             COALESCE(up.availability->'days', '[]'::jsonb) AS availability_days`;
 
     const inviteJoin = tournamentId
       ? `,
@@ -46,8 +51,9 @@ export async function GET(req: NextRequest) {
        FROM profiles p
        LEFT JOIN umpire_reviews r ON r.umpire_id = p.id
        LEFT JOIN matches m ON m.umpire_id = p.id
+       LEFT JOIN umpire_profiles up ON up.profile_id = p.id
        WHERE p.role = 'umpire' OR 'umpire' = ANY(p.roles)
-       GROUP BY p.id, p.full_name
+       GROUP BY p.id, p.full_name, up.certification, up.license_number, up.experience_years, up.availability
        ORDER BY avg_rating DESC, p.full_name ASC`;
 
     const sql = baseSql + inviteJoin + fromSql;

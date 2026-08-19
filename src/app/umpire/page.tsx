@@ -274,7 +274,17 @@ export default function UmpireDashboardPage() {
                       {i.start_date && i.end_date ? " — " : ""}
                       {i.end_date ? new Date(i.end_date).toLocaleDateString() : ""}
                       {i.venue ? ` · ${i.venue}` : ""}
+                      {i.category_count ? ` · ${i.category_count} categories` : ""}
                     </p>
+                    {i.description && (
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">{i.description}</p>
+                    )}
+                    {i.tournament_id && (
+                      <Link href={`/tournament/${i.tournament_id}`} target="_blank"
+                        className="inline-block mt-1.5 text-xs text-emerald-700 font-semibold hover:text-emerald-600 underline underline-offset-2">
+                        🔍 View tournament details →
+                      </Link>
+                    )}
                     {i.created_at && (
                       <p className="text-xs text-gray-400 mt-0.5">📨 Invited on {new Date(i.created_at).toLocaleString()}</p>
                     )}

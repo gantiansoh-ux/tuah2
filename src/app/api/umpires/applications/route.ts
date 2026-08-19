@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     // Load application + verify organizer
     const application = await queryOne(
-      `SELECT a.id, a.tournament_id, a.umpire_id, a.status
+      `SELECT a.id, a.tournament_id, a.umpire_id, a.status, a.direction
        FROM umpire_applications a
        JOIN tournaments t ON a.tournament_id = t.id
        WHERE a.id = $1`,
@@ -92,6 +92,16 @@ export async function POST(req: NextRequest) {
     );
     if (!application) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
+    }
+
+    // Organizer cannot approve/reject an INVITATION (direction='invite'). Per Gan
+    // 2026-08-19: only the invited umpire decides (Accept/Decline from their
+    // dashboard). Approve/Reject here is reserved for SELF-applications only.
+    if (application.direction === "invite") {
+      return NextResponse.json(
+        { error: "This umpire was invited — only they can accept or decline the invitation" },
+        { status: 403 }
+      );
     }
 
     const tournament = await queryOne(`SELECT organizer_id FROM tournaments WHERE id = $1`, [application.tournament_id]);
