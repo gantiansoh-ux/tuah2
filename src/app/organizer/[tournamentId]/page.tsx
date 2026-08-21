@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import Link from "next/link";
@@ -245,6 +245,68 @@ export default function TournamentDetailPage({
   // which surfaces in the umpire's own dashboard as "My Tournaments".
   const [umpAssignments, setUmpAssignments] = useState<any[]>([]);
   const [assigningUmpire, setAssigningUmpire] = useState<string | null>(null);
+
+  // UI-SPEC-UMP1: client-side search / filter / sort for the Manage Umpires panel.
+  // All of this is PURE UI over the already-loaded dbUmpires array - no API/data change.
+  const [umpSearch, setUmpSearch] = useState("");
+  const [umpStatus, setUmpStatus] = useState("all");
+  const [umpCert, setUmpCert] = useState("any");
+  const [umpSort, setUmpSort] = useState("rating");
+
+  // Derived counts for the top summary stats bar (all from client-side data).
+  const umpStats = useMemo(() => {
+    const invited = dbUmpires.filter((u) => u.invite_status === "pending").length;
+    const accepted = dbUmpires.filter((u) => u.invite_status === "approved").length;
+    const declined = dbUmpires.filter((u) => u.invite_status === "rejected").length;
+    const apps = umpireApps.filter((a) => a.status === "pending").length;
+    return { all: dbUmpires.length, invited, accepted, declined, apps };
+  }, [dbUmpires, umpireApps]);
+
+  // Filtered + sorted umpires for the list (client-side only).
+  const filteredUmpires = useMemo(() => {
+    const q = umpSearch.trim().toLowerCase();
+    let list = dbUmpires.filter((u) => {
+      // status filter
+      if (umpStatus === "invited" && u.invite_status !== "pending") return false;
+      if (umpStatus === "accepted" && u.invite_status !== "approved") return false;
+      if (umpStatus === "declined" && u.invite_status !== "rejected") return false;
+      if (umpStatus === "uninvited" && u.invite_status) return false;
+      // certification filter (substring match e.g. "BWF", "National", "Club")
+      if (umpCert !== "any") {
+        const cert = (u.certification || "").toLowerCase();
+        if (!cert.includes(umpCert.toLowerCase())) return false;
+      }
+      // search: name OR email (email may be absent from API response; defensive)
+      if (q) {
+        const name = (u.full_name || "").toLowerCase();
+        const email = (u.email || "").toLowerCase();
+        if (!name.includes(q) && !email.includes(q)) return false;
+      }
+      return true;
+    });
+    // sort
+    switch (umpSort) {
+      case "rating":
+        list = [...list].sort((a, b) => Number(b.avg_rating || 0) - Number(a.avg_rating || 0));
+        break;
+      case "matches":
+        list = [...list].sort((a, b) => Number(b.matches_umpired || 0) - Number(a.matches_umpired || 0));
+        break;
+      case "available":
+        list = [...list].sort((a, b) => {
+          const la = (a.availability_days && a.availability_days.length) || 0;
+          const lb = (b.availability_days && b.availability_days.length) || 0;
+          return lb - la;
+        });
+        break;
+      case "name":
+        list = [...list].sort((a, b) => (a.full_name || "").localeCompare(b.full_name || ""));
+        break;
+      default:
+        break;
+    }
+    return list;
+  }, [dbUmpires, umpSearch, umpStatus, umpCert, umpSort]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -2069,6 +2131,60 @@ export default function TournamentDetailPage({
           <div className="space-y-5">
             <p className="text-sm text-gray-500">Browse umpires, approve applications, and rate their performance.</p>
 
+            {/* Top summary stats bar (UI-SPEC-UMP1) */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { label: "All umpires", value: umpStats.all, cls: "text-gray-900" },
+                { label: "Invited", value: umpStats.invited, cls: "text-amber-600" },
+                { label: "Accepted", value: umpStats.accepted, cls: "text-emerald-600" },
+                { label: "Declined", value: umpStats.declined, cls: "text-red-500" },
+                { label: "Applications", value: umpStats.apps, cls: "text-blue-600" },
+              ].map((s) => (
+                <div key={s.label} className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                  <b className={`block text-lg leading-tight ${s.cls}`}>{s.value}</b>
+                  <span className="text-[11px] text-gray-500">{s.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Search + filter + sort toolbar (UI-SPEC-UMP1, all client-side) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+                <input
+                  value={umpSearch}
+                  onChange={(e) => setUmpSearch(e.target.value)}
+                  placeholder="Search by name or email..."
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-emerald-400"
+                />
+              </div>
+              <select value={umpStatus} onChange={(e) => setUmpStatus(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+                <option value="all">All statuses</option>
+                <option value="invited">Invited</option>
+                <option value="accepted">Accepted</option>
+                <option value="declined">Declined</option>
+                <option value="uninvited">Not invited</option>
+              </select>
+              <select value={umpCert} onChange={(e) => setUmpCert(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-2 bg-white text-gray-700">
+                <option value="any">Any cert</option>
+                <option value="BWF">BWF</option>
+                <option value="National">National</option>
+                <option value="Club">Club</option>
+              </select>
+              <div className="text-xs text-gray-500 flex items-center gap-1 ml-auto">
+                Sort by{" "}
+                <select value={umpSort} onChange={(e) => setUmpSort(e.target.value)}
+                  className="border-none text-emerald-700 font-semibold bg-transparent text-xs cursor-pointer">
+                  <option value="rating">Top rated</option>
+                  <option value="matches">Most matches</option>
+                  <option value="available">Available first</option>
+                  <option value="name">Name</option>
+                </select>
+              </div>
+            </div>
+
             {/* Umpire Applications */}
             <div>
               <h3 className="text-sm font-bold text-gray-700 mb-2">
@@ -2094,7 +2210,7 @@ export default function TournamentDetailPage({
                           <p className="text-sm font-semibold text-gray-800">
                             {a.full_name}
                             {a.avg_rating > 0 && (
-                              <span className="ml-2 text-xs text-amber-600 font-medium">✅ {a.avg_rating} ({a.review_count})</span>
+                              <span className="ml-2 text-xs text-amber-600 font-medium">✓ {a.avg_rating} ({a.review_count})</span>
                             )}
                           </p>
                           <p className="text-xs text-gray-400">{a.email}</p>
@@ -2136,9 +2252,13 @@ export default function TournamentDetailPage({
               )}
             </div>
 
-            {/* All Umpires */}
+            {/* All Umpires (UI-SPEC-UMP1 card layout) */}
             <div>
-              <h3 className="text-sm font-bold text-gray-700 mb-2">{"\u{1F464}"} All Umpires ({dbUmpires.length})</h3>
+              <h3 className="text-sm font-bold text-gray-700 mb-2">{"\u{1F464}"} All Umpires ({filteredUmpires.length})
+                {umpSearch || umpStatus !== "all" || umpCert !== "any" ? (
+                  <span className="ml-2 text-xs text-gray-400 font-normal">filtered from {dbUmpires.length}</span>
+                ) : null}
+              </h3>
               <p className="text-xs text-gray-400 mb-2">Invite an umpire to officiate this tournament - "Invited" means pending their reply, "Accepted" means confirmed, "Declined" means they turned it down.</p>
               {loadingUmpires ? (
                 <div className="text-center py-4 text-gray-400 animate-pulse">Loading umpires...</div>
@@ -2147,83 +2267,113 @@ export default function TournamentDetailPage({
                   <div className="text-3xl mb-2">{"\u{1F464}"}</div>
                   <p className="text-sm">No umpires found in the database.</p>
                 </div>
+              ) : filteredUmpires.length === 0 ? (
+                <div className="text-center py-6 text-gray-400">
+                  <div className="text-3xl mb-2">{"\u{1F50D}"}</div>
+                  <p className="text-sm">No umpires match your filters.</p>
+                </div>
               ) : (
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {dbUmpires.map((u: any) => (
-                    <div key={u.id} className="px-3 py-2 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm text-gray-700 font-medium truncate">{u.full_name}</span>
-                        {u.email && <span className="text-xs text-gray-400 hidden sm:inline">({u.email})</span>}
-                        {u.avg_rating > 0 && (
-                          <span className="text-xs text-amber-600 font-medium shrink-0">✅ {u.avg_rating}</span>
-                        )}
-                        {u.matches_umpired > 0 && (
-                          <span className="text-xs text-gray-400 shrink-0">({u.matches_umpired} matches)</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Umpire</span>
-                        {u.invite_status === "pending" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium flex flex-col items-center leading-tight">
-                            ◌ Invited{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
-                          </span>
-                        )}
-                        {u.invite_status === "approved" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium flex flex-col items-center leading-tight">
-                            ✓ Accepted{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
-                          </span>
-                        )}
-                        {u.invite_status === "rejected" && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">✕ Declined</span>
-                        )}
-                        {/* Show Invite button when never invited, or re-invite after a decline */}
-                        {(!u.invite_status || u.invite_status === "rejected") && (
-                          <button onClick={() => handleInvite(u.id)} disabled={invitingUmpire === u.id}
-                            className={`text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 ${u.invite_status === "rejected"
-                              ? "bg-red-100 text-red-600 hover:bg-red-200"
-                              : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
-                            {invitingUmpire === u.id ? "Sending..." : u.invite_status === "rejected" ? "\u{1F501} Re-invite" : "\u{1F4E8} Invite"}
-                          </button>
-                        )}
-                        <button onClick={() => setShowRateModal(u.id)}
-                          className="text-xs bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg hover:bg-amber-200 font-medium">
-                          ✅ Rate
-                        </button>
-                        {umpAssignments.some((a) => a.umpire_id === u.id) ? (
-                          <button onClick={() => handleUnassignUmpire(u.id)}
-                            className="text-xs bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-lg hover:bg-emerald-200 font-medium">
-                            ✓ Assigned · remove
-                          </button>
-                        ) : (
-                          <button onClick={() => handleAssignUmpire(u.id)} disabled={assigningUmpire === u.id}
-                            className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-lg hover:bg-gray-200 font-medium disabled:opacity-50">
-                            {assigningUmpire === u.id ? "..." : "\u{1F3BD} Assign to tournament"}
-                          </button>
-                        )}
-                      </div>
-                      {(Number(u.rate) > 0 || u.certification || u.license_number || Number(u.experience_years) > 0 || (Array.isArray(u.availability_days) && u.availability_days.length > 0)) && (
-                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                          {Number(u.rate) > 0 && (
-                            <span className="font-semibold text-emerald-700">{"\u{1F4B0}"} RM{u.rate}/hr</span>
-                          )}
-                          {u.certification && <span>{"\u{1F393}"} {u.certification}</span>}
-                          {u.license_number && <span>{"\u{1F4DC}"} {u.license_number}</span>}
-                          {Number(u.experience_years) > 0 && <span>⏳ {u.experience_years} yrs</span>}
-                          {Array.isArray(u.availability_days) && u.availability_days.length > 0 && (
-                            <span title={u.availability_days.join(", ")}>{"\u{1F4C5}"} {u.availability_days.join(", ")}</span>
-                          )}
+                <div className="max-h-[26rem] overflow-y-auto space-y-2">
+                  {filteredUmpires.map((u: any) => {
+                    const isAssigned = umpAssignments.some((a) => a.umpire_id === u.id);
+                    const status = u.invite_status;
+                    const detailVisible = Number(u.rate) > 0 || u.certification || u.license_number || Number(u.experience_years) > 0 || (Array.isArray(u.availability_days) && u.availability_days.length > 0);
+                    return (
+                      <div key={u.id} className="border border-gray-100 rounded-xl bg-white p-3 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-sm shrink-0">
+                            {((u.full_name || "U").trim().charAt(0) || "U").toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm text-gray-800 truncate">{u.full_name}</span>
+                              {status === "pending" && (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 whitespace-nowrap">
+                                  ◌ Invited{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                                </span>
+                              )}
+                              {status === "approved" && (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 whitespace-nowrap">
+                                  ✓ Accepted{u.invite_created_at ? ` · ${new Date(u.invite_created_at).toLocaleDateString()}` : ""}
+                                </span>
+                              )}
+                              {status === "rejected" && (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600 whitespace-nowrap">✕ Declined</span>
+                              )}
+                              {isAssigned && (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 whitespace-nowrap">Assigned</span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-3 flex-wrap text-xs text-gray-500">
+                              {Number(u.avg_rating) > 0 && (
+                                <span className="font-bold text-amber-600">★ {Number(u.avg_rating).toFixed(1)}</span>
+                              )}
+                              {Number(u.matches_umpired) > 0 && (
+                                <span>{u.matches_umpired} matches</span>
+                              )}
+                              {u.email && <span className="text-gray-400">{u.email}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                            {/* Invite / Re-invite (declined -> re-invite as primary) */}
+                            {(!u.invite_status || u.invite_status === "rejected") && (
+                              <button onClick={() => handleInvite(u.id)} disabled={invitingUmpire === u.id}
+                                className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg disabled:opacity-50 ${u.invite_status === "rejected"
+                                  ? "bg-red-500 text-white hover:bg-red-600"
+                                  : "bg-blue-100 text-blue-700 hover:bg-blue-200"}`}>
+                                {invitingUmpire === u.id ? "Sending..." : u.invite_status === "rejected" ? "\u{1F501} Re-invite" : "\u{1F4E8} Invite"}
+                              </button>
+                            )}
+                            {/* Rate - always available */}
+                            <button onClick={() => setShowRateModal(u.id)}
+                              className="text-xs font-semibold bg-amber-100 text-amber-700 px-2.5 py-1.5 rounded-lg hover:bg-amber-200">
+                              ✓ Rate
+                            </button>
+                            {/* Assign to matches - primary emphasis for accepted */}
+                            {isAssigned ? (
+                              <button onClick={() => handleUnassignUmpire(u.id)}
+                                className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-1.5 rounded-lg hover:bg-emerald-200">
+                                ✓ Assigned · remove
+                              </button>
+                            ) : status === "approved" ? (
+                              <button onClick={() => handleAssignUmpire(u.id)} disabled={assigningUmpire === u.id}
+                                className="text-xs font-semibold bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-500 disabled:opacity-50">
+                                {assigningUmpire === u.id ? "..." : "\u{1F3BD} Assign to matches"}
+                              </button>
+                            ) : (
+                              <button onClick={() => handleAssignUmpire(u.id)} disabled={assigningUmpire === u.id}
+                                className="text-xs font-semibold bg-gray-100 text-gray-600 px-2.5 py-1.5 rounded-lg hover:bg-gray-200 disabled:opacity-50">
+                                {assigningUmpire === u.id ? "..." : "\u{1F3BD} Assign to matches"}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      )}
+                        {/* Detail column - KEEP full existing fields (rate/cert/license/years/availability) */}
+                        {detailVisible && (
+                          <div className="mt-2 pt-2 border-t border-dashed border-gray-200 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                            {Number(u.rate) > 0 && (
+                              <span className="font-semibold text-emerald-700">{"\u{1F4B0}"} RM{u.rate}/hr</span>
+                            )}
+                            {u.certification && <span>{"\u{1F393}"} {u.certification}</span>}
+                            {u.license_number && <span>{"\u{1F4DC}"} {u.license_number}</span>}
+                            {Number(u.experience_years) > 0 && <span>⏳ {u.experience_years} yrs exp</span>}
+                            {Array.isArray(u.availability_days) && u.availability_days.length > 0 && (
+                              <span title={u.availability_days.join(", ")}>{"\u{1F4C5}"} {u.availability_days.join(", ")}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-            <div className="text-xs text-gray-400 mt-2 border-t border-gray-100 pt-3">
-              Assign umpires to matches from the Live Matches tab.
+            <div className="text-xs text-gray-400 mt-2 border-t border-gray-100 pt-3 flex items-center justify-between">
+              <span>Assign umpires to matches from the Live Matches tab.</span>
+              {!loadingUmpires && dbUmpires.length > 0 && (
+                <span className="text-gray-400">Showing {filteredUmpires.length} of {dbUmpires.length} umpires</span>
+              )}
             </div>
           </div>
         </Modal>
