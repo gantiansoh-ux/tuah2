@@ -13,11 +13,11 @@ import Link from "next/link";
 // Purpose is classification / discovery / badge ONLY in the MVP - it does NOT
 // enforce eligibility (no auto-reject by age/company/school yet) and is NOT a format.
 const TOURNAMENT_TYPES = [
-  { value: "junior", label: "Junior Tournament", icon: "ðŸ§’" },
-  { value: "open", label: "Open Tournament", icon: "ðŸŒ�" },
-  { value: "school", label: "School Tournament", icon: "ðŸ�«" },
-  { value: "corporate", label: "Corporate Tournament", icon: "ðŸ’¼" },
-  { value: "veteran", label: "Veteran Tournament", icon: "ðŸ‘´" },
+  { value: "junior", label: "Junior Tournament", icon: "\u{1F9D2}" },
+  { value: "open", label: "Open Tournament", icon: "\u{1F30D}" },
+  { value: "school", label: "School Tournament", icon: "\u{1F3EB}" },
+  { value: "corporate", label: "Corporate Tournament", icon: "\u{1F4BC}" },
+  { value: "veteran", label: "Veteran Tournament", icon: "\u{1F474}" },
 ];
 
 // REDESIGN (Gan d1/d3): COMPETITION FORMAT = how it is played (match_format).
@@ -142,7 +142,7 @@ function FileUpload({
               />
             )}
             <span className="text-sm text-gray-500 truncate max-w-[150px]">{state.filename}</span>
-            <span className="text-xs text-emerald-600 font-medium">Uploaded âœ“</span>
+            <span className="text-xs text-emerald-600 font-medium">Uploaded ✓</span>
           </div>
         )}
         {state.error && <span className="text-sm text-red-500">{state.error}</span>}
@@ -308,7 +308,7 @@ export default function CreateTournamentPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-6xl mb-4">ðŸŽ‰</div>
+          <div className="text-6xl mb-4">{"\u{1F389}"}</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Tournament Created!</h2>
           <p className="text-gray-500 mb-6">Redirecting to your tournament page...</p>
           <div className="animate-spin w-6 h-6 border-4 border-emerald-500 border-t-transparent rounded-full mx-auto" />
@@ -321,7 +321,7 @@ export default function CreateTournamentPage() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-emerald-900 text-white px-6 py-4">
         <Link href="/organizer" className="text-sm text-emerald-200 hover:text-emerald-100">
-          â†� Dashboard
+          ← Dashboard
         </Link>
       </nav>
 
@@ -567,10 +567,10 @@ export default function CreateTournamentPage() {
             </div>
 
             <div className="bg-emerald-50 rounded-xl p-4">
-              <p className="text-sm text-emerald-800 font-medium">ðŸ’¡ Pro Tip</p>
+              <p className="text-sm text-emerald-800 font-medium">{"\u{1F4A1}"} Pro Tip</p>
               <p className="text-sm text-emerald-600 mt-1">
                 Upload high-quality images for better visibility. Posters should be at least
-                800Ã—1200px.
+                800×1200px.
               </p>
             </div>
           </div>
@@ -686,8 +686,8 @@ export default function CreateTournamentPage() {
                 <p className="text-xs text-gray-400 mt-3">
                   {cat.ageGroup}{" "}
                   {GENDER_TYPES.find((g) => g.value === cat.gender)?.label}{" "}
-                  {cat.type === "doubles" ? "Doubles" : "Singles"} Â· {cat.points} pts Â· Best of{" "}
-                  {cat.bestOf} Â· Deuce: {cat.deuce ? "Yes" : "No"}
+                  {cat.type === "doubles" ? "Doubles" : "Singles"} · {cat.points} pts · Best of{" "}
+                  {cat.bestOf} · Deuce: {cat.deuce ? "Yes" : "No"}
                 </p>
               </div>
             ))}
@@ -745,7 +745,7 @@ export default function CreateTournamentPage() {
                       {venueData.venue}
                       {venueData.lat && venueData.lng && (
                         <span className="block text-xs text-gray-400 mt-1">
-                          ðŸ“� {venueData.lat.toFixed(4)}, {venueData.lng.toFixed(4)}
+                          {"\u{1F4CD}"} {venueData.lat.toFixed(4)}, {venueData.lng.toFixed(4)}
                         </span>
                       )}
                     </span>
@@ -754,7 +754,7 @@ export default function CreateTournamentPage() {
                 <div className="flex justify-between">
                   <span className="text-gray-500">Dates</span>
                   <span className="font-medium text-gray-900 text-right">
-                    {startDate} â†’ {endDate}
+                    {startDate} → {endDate}
                   </span>
                 </div>
                 {registrationDeadline && (
@@ -830,7 +830,7 @@ export default function CreateTournamentPage() {
                     {c.type === "doubles" ? "Doubles" : "Singles"}
                   </span>
                   <span className="text-gray-400">
-                    {c.points}pts Â· BO{c.bestOf} Â· {c.deuce ? "Deuce on" : "No deuce"}
+                    {c.points}pts · BO{c.bestOf} · {c.deuce ? "Deuce on" : "No deuce"}
                   </span>
                 </div>
               ))}
@@ -845,7 +845,7 @@ export default function CreateTournamentPage() {
               onClick={() => setStep(step - 1)}
               className="px-6 py-3 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50"
             >
-              â†� Back
+              ← Back
             </button>
           ) : (
             <div />
@@ -855,7 +855,7 @@ export default function CreateTournamentPage() {
               onClick={() => setStep(step + 1)}
               className="px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-600"
             >
-              Next â†’
+              Next →
             </button>
           ) : (
             <button
@@ -863,7 +863,7 @@ export default function CreateTournamentPage() {
               disabled={loading}
               className="px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold hover:bg-emerald-600 disabled:opacity-50"
             >
-              {loading ? "Creating..." : "ðŸŽ‰ Create Tournament"}
+              {loading ? "Creating..." : "\u{1F389} Create Tournament"}
             </button>
           )}
         </div>
