@@ -180,7 +180,6 @@ export default function TournamentDetailPage({
   const [matches, setMatches] = useState<any[]>([]);
   const [games, setGames] = useState<any[]>([]);
   const [standings, setStandings] = useState<any>(null);
-  const [registrations, setRegistrations] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "entries" | "draw" | "matches" | "registration">("overview");
   const [loading, setLoading] = useState(true);
 
@@ -345,12 +344,8 @@ export default function TournamentDetailPage({
       } catch {
         // standings are best-effort
       }
-      // Load registrations
-      const regRes = await fetch(`/api/tournament_registrations?tournament_id=${tournamentId}`);
-      if (regRes.ok) {
-        const regData = await regRes.json();
-        setRegistrations(regData.registrations || []);
-      }
+      // P1-1 arch: single authoritative source = entries (from /api/tournaments/[id]).
+      // No separate tournament_registrations fetch (that legacy table is read-only/history).
     } catch (err) {
       console.error("Load tournament error:", err);
     } finally {
@@ -527,40 +522,9 @@ export default function TournamentDetailPage({
     setGeneratingDraw(false);
   }
 
-  async function approveRegistration(regId: string) {
-    // Optimistic in-place update: no full reload -> no scroll jump -> approve multiple in a row
-    setRegistrations((prev) =>
-      prev.map((r: any) => (r.id === regId ? { ...r, status: "approved" } : r))
-    );
-    try {
-      await fetch(`/api/tournament_registrations/${regId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "approved" }),
-      });
-    } catch (e) {
-      console.error("Approve registration error:", e);
-      loadAll();
-    }
-  }
-
-  async function rejectRegistration(regId: string) {
-    // Optimistic in-place update: no full reload -> no scroll jump
-    setRegistrations((prev) =>
-      prev.map((r: any) => (r.id === regId ? { ...r, status: "rejected" } : r))
-    );
-    try {
-      await fetch(`/api/tournament_registrations/${regId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "rejected" }),
-      });
-    } catch (e) {
-      console.error("Reject registration error:", e);
-      loadAll();
-    }
-  }
-
+  // P1-1 arch: approve/reject happen against the entries list via PATCH /api/entries/[id]
+  // (removed the legacy approveRegistration/rejectRegistration that wrote to
+  // tournament_registrations — that table is now read-only; entries is the SOLE authority).
   async function saveSeed(entryId: string, seed: number | null) {
     setEditingSeeds(prev => ({...prev, [entryId]: seed ?? ''}));
     const res = await fetch(`/api/entries/${entryId}`, {
@@ -788,7 +752,10 @@ export default function TournamentDetailPage({
   if (!user || !tournament) return null;
 
   const isOwner = tournament.organizer_id === user.id;
-  const pendingRegs = registrations.filter((r: any) => r.status === "pending");
+  // P1-1 arch: pending registrations derived from `entries` (the sole authority).
+  const pendingRegs = (entries || []).filter(
+    (e: any) => e.registration_status === 'pending'
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1680,24 +1647,24 @@ export default function TournamentDetailPage({
             {/* Stats Row */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
-                <div className="text-xl font-black text-gray-900">{(entries.filter((e: any) => e.registration_status).length) + (registrations.length || 0)}</div>
+                <div className="text-xl font-black text-gray-900">{entries.filter((e: any) => e.registration_status).length}</div>
                 <div className="text-xs text-gray-500">Total</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-yellow-200 shadow-sm text-center">
                 <div className="text-xl font-black text-yellow-600">
-                  {entries.filter((e: any) => e.registration_status === 'pending').length + registrations.filter((r: any) => r.status === 'pending').length}
+                  {entries.filter((e: any) => e.registration_status === 'pending').length}
                 </div>
                 <div className="text-xs text-yellow-600">Pending</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm text-center">
                 <div className="text-xl font-black text-green-600">
-                  {entries.filter((e: any) => e.registration_status === 'approved').length + registrations.filter((r: any) => r.status === 'approved').length}
+                  {entries.filter((e: any) => e.registration_status === 'approved').length}
                 </div>
                 <div className="text-xs text-green-600">Approved</div>
               </div>
               <div className="bg-white rounded-xl p-4 border border-red-200 shadow-sm text-center">
                 <div className="text-xl font-black text-red-600">
-                  {entries.filter((e: any) => e.registration_status === 'rejected').length + registrations.filter((r: any) => r.status === 'rejected').length}
+                  {entries.filter((e: any) => e.registration_status === 'rejected').length}
                 </div>
                 <div className="text-xs text-red-600">Rejected</div>
               </div>
@@ -1811,9 +1778,65 @@ export default function TournamentDetailPage({
                                   </button>
                                 </div>
                               )}
-                              {entry.registration_status === 'approved' && (
-                                <span className="text-xs text-green-500 font-medium">✅ Approved</span>
-                              )}
+                              {entry.registration_status === 'approved' && (() => {
+                                const isWithdrawn = entry.status === 'withdrawn';
+                                const isDq = entry.status === 'disqualified';
+                                return (
+                                  <div className="flex flex-col items-end gap-1">
+                                    {isWithdrawn ? (
+                                      <span className="text-xs font-medium text-emerald-600">✅ Approved</span>
+                                    ) : isDq ? (
+                                      <span className="text-xs font-medium text-purple-700">⛔ Disqualified</span>
+                                    ) : (
+                                      <span className="text-xs font-medium text-green-500">✅ Approved</span>
+                                    )}
+                                    {!isWithdrawn && !isDq && (
+                                      <div className="flex gap-1.5 mt-1">
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Withdraw ${entry.player_1_name || "this player"}? (excluded from future draws)`)) return;
+                                            setEntries((prev: any[]) =>
+                                              prev.map((e: any) => e.id === entry.id ? { ...e, status: 'withdrawn' } : e)
+                                            );
+                                            try {
+                                              const r = await fetch(`/api/entries/${entry.id}`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ status: 'withdrawn' }),
+                                              });
+                                              if (!r.ok) { const e2 = await r.json(); alert(e2.error || 'Withdraw failed'); loadAll(); }
+                                              else await loadAll();
+                                            } catch (err) { console.error(err); loadAll(); }
+                                          }}
+                                          className="text-[11px] bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200"
+                                        >
+                                          ↩ Withdraw
+                                        </button>
+                                        <button
+                                          onClick={async () => {
+                                            if (!confirm(`Disqualify ${entry.player_1_name || "this player"}? (terminal, excluded from draws)`)) return;
+                                            setEntries((prev: any[]) =>
+                                              prev.map((e: any) => e.id === entry.id ? { ...e, status: 'disqualified' } : e)
+                                            );
+                                            try {
+                                              const r = await fetch(`/api/entries/${entry.id}`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ status: 'disqualified' }),
+                                              });
+                                              if (!r.ok) { const e2 = await r.json(); alert(e2.error || 'Disqualify failed'); loadAll(); }
+                                              else await loadAll();
+                                            } catch (err) { console.error(err); loadAll(); }
+                                          }}
+                                          className="text-[11px] bg-purple-100 text-purple-700 px-2 py-1 rounded hover:bg-purple-200"
+                                        >
+                                          ⛔ Disqualify
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                               {entry.registration_status === 'rejected' && (
                                 <span className="text-xs text-red-400 font-medium">✘ Rejected</span>
                               )}
@@ -1827,61 +1850,8 @@ export default function TournamentDetailPage({
               </div>
             )}
 
-            {/* Legacy Tournament Registrations */}
-            {registrations.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <h2 className="font-bold text-gray-900">
-                    App Registrations
-                    {pendingRegs.length > 0 && <span className="ml-2 text-yellow-600">({pendingRegs.length} pending)</span>}
-                  </h2>
-                </div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500">
-                    <tr>
-                      <th className="text-left px-6 py-3 font-medium">Player</th>
-                      <th className="text-left px-6 py-3 font-medium">Category</th>
-                      <th className="text-left px-6 py-3 font-medium">Date</th>
-                      <th className="text-left px-6 py-3 font-medium">Status</th>
-                      {isOwner && <th className="text-right px-6 py-3 font-medium">Actions</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {registrations.map((reg: any) => (
-                      <tr key={reg.id} className="border-t border-gray-50 hover:bg-gray-50">
-                        <td className="px-6 py-3 font-medium text-gray-900">{reg.player_name || reg.profile_id?.slice(0, 8)}</td>
-                        <td className="px-6 py-3 text-gray-500">-</td>
-                        <td className="px-6 py-3 text-gray-400 text-xs">
-                          {fmtLocalDate(reg.registered_at) || fmtLocalDate(reg.registration_date) || "-"}
-                        </td>
-                        <td className="px-6 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            reg.status === "pending" ? "bg-yellow-100 text-yellow-700" :
-                            reg.status === "approved" ? "bg-green-100 text-green-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>{reg.status}</span>
-                        </td>
-                        {isOwner && (
-                          <td className="px-6 py-3 text-right">
-                            {reg.status === "pending" && (
-                              <div className="flex gap-2 justify-end">
-                                <button onClick={() => approveRegistration(reg.id)}
-                                  className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-lg hover:bg-green-200">✅ Approve</button>
-                                <button onClick={() => rejectRegistration(reg.id)}
-                                  className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded-lg hover:bg-red-200">❌ Reject</button>
-                              </div>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
             {/* Empty State */}
-            {entries.filter((e: any) => e.registration_status).length === 0 && registrations.length === 0 && (
+            {entries.filter((e: any) => e.registration_status).length === 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm text-center py-12 text-gray-400">
                 <div className="text-4xl mb-2">{"\u{1F4CD}"}</div>
                 <p>No registrations yet. Share the tournament link for players to sign up.</p>

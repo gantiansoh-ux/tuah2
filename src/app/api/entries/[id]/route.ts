@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query, queryOne, queryAll } from "@/lib/db";
+import { query, queryOne, withTransaction } from "@/lib/db";
 import { checkCategoryCapacity } from "@/lib/registration";
+
+const ENTRY_STATUS_ALLOWED = ["registered", "confirmed", "withdrawn", "disqualified"];
 
 // GET /api/entries/[id] - get a specific entry
 export async function GET(
@@ -37,7 +39,10 @@ export async function GET(
   }
 }
 
-// PATCH /api/entries/[id] - update entry fields (e.g. seed, player names)
+// PATCH /api/entries/[id] - update entry fields (organizer only)
+// P1-1 arch: adds authoritative `status` transitions (registered|confirmed|
+// withdrawn|disqualified) on top of the existing seed/payment/approval fields.
+// Every state change is a SINGLE transactional write to `entries` (HARD GUARD).
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -69,11 +74,36 @@ export async function PATCH(
       return NextResponse.json({ error: "Forbidden — organizer only" }, { status: 403 });
     }
     const body = await req.json();
-    const allowedFields = ["seed", "registration_status", "confirmed_at", "payment_status", "player_1_name", "player_2_name"];
+    const allowedFields = [
+      "seed",
+      "registration_status",
+      "confirmed_at",
+      "payment_status",
+      "player_1_name",
+      "player_2_name",
+      "status", // P1-1 arch: participation status (registered|confirmed|withdrawn|disqualified)
+    ];
 
     // Handle special case: approving auto-sets confirmed_at
     if (body.registration_status === 'approved') {
       delete body.confirmed_at;
+    }
+
+    // A withdrawn / disqualified participant cannot be approved (decision #2/#3:
+    // approval adds an `AND status='registered'` guard).
+    if (body.registration_status === 'approved' || body.registration_status === 'rejected') {
+      if (body.registration_status === 'approved' && entry.status === 'withdrawn') {
+        return NextResponse.json(
+          { error: "Cannot approve a withdrawn entry" },
+          { status: 409 }
+        );
+      }
+      if (entry.status === 'disqualified') {
+        return NextResponse.json(
+          { error: "Cannot change registration_status of a disqualified entry (terminal)" },
+          { status: 409 }
+        );
+      }
     }
 
     // BUG-012: capacity gate on approval (exclude this entry — already counted as pending)
@@ -87,6 +117,16 @@ export async function PATCH(
     const sets: string[] = [];
     const values: any[] = [];
     let idx = 1;
+
+    // Validate/whitelist `status` values when present.
+    if (body.status !== undefined) {
+      if (!ENTRY_STATUS_ALLOWED.includes(body.status)) {
+        return NextResponse.json(
+          { error: `status must be one of: ${ENTRY_STATUS_ALLOWED.join(", ")}` },
+          { status: 400 }
+        );
+      }
+    }
 
     for (const [key, val] of Object.entries(body)) {
       if (allowedFields.includes(key)) {
@@ -107,12 +147,16 @@ export async function PATCH(
 
     values.push(id);
 
-    const result = await query(
-      `UPDATE entries SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
-      values
-    );
+    // P1-1 arch: ONE transaction, ONE authoritative write to entries.
+    const result = await withTransaction(async (client) => {
+      const r = await client.query(
+        `UPDATE entries SET ${sets.join(", ")} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+      return r.rows[0];
+    });
 
-    return NextResponse.json({ entry: result.rows[0] });
+    return NextResponse.json({ entry: result });
   } catch (err: any) {
     console.error("Update entry error:", err);
     return NextResponse.json({ error: "Failed to update entry" }, { status: 500 });

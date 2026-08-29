@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { query, queryOne } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
-import { checkRegistrationAllowed } from "@/lib/registration";
+import { queryOne, withTransaction } from "@/lib/db";
+import { checkRegistrationAllowed, acquireRegLockAndGuard, RegistrationConflictError } from "@/lib/registration";
+import { findOrCreateProfileFull } from "@/lib/profiles";
 
 // POST /api/public_registrations - Create a new player registration (public, no auth)
 export async function POST(req: NextRequest) {
@@ -75,41 +75,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "student_card_url is required for school tournaments" }, { status: 400 });
     }
 
-    // Create/find profile for the player, then insert entry referencing profile id.
-    // findOrCreateProfile ALWAYS returns { id, tempPassword? } so p1.id is defined.
-    const p1 = await findOrCreateProfile(player_name.trim(), email.trim(), phone || null);
+    // P1-1 arch: create/find profiles, then guard for ACTIVE duplicates
+    // (category + player(+pair), pending/approved + registered/confirmed; doubles
+    // (A,B)/(B,A) normalized). Public double-submit -> 409.
+    const p1 = await findOrCreateProfileFull(player_name.trim(), email.trim(), phone || null);
     const p1Id = p1.id;
     let p2Id: string | null = null;
     let p2TempPw: string | null = null;
     if (category.type === "doubles" && partner_name) {
-      const p2 = await findOrCreateProfile(partner_name.trim(), null, null);
+      const p2 = await findOrCreateProfileFull(partner_name.trim(), null, null);
       p2Id = p2.id;
       p2TempPw = p2.tempPassword || null;
     }
 
-    const result = await query(
-      `INSERT INTO entries (
-        category_id,
-        player_1_id,
-        player_2_id,
-        registration_status,
-        payment_status,
-        ic_document_url,
-        passport_url,
-        student_card_url
-      ) VALUES ($1, $2, $3, 'pending', 'unpaid', $4, $5, $6)
-      RETURNING *`,
-      [
-        category_id,
-        p1Id,
-        p2Id,
-        ic_document_url || null,
-        passport_url || null,
-        student_card_url || null,
-      ]
-    );
+    // UNIQUE-GATE: ACTIVE cross-position duplicate guard runs INSIDE the
+    // transaction, right after the per-category advisory lock (TOCTOU closed),
+    // so public double-submit and player overlaps are caught atomically. DB
+    // unique indexes additionally clamp same-key singles / doubles-symmetry.
+    const entry = await withTransaction(async (client) => {
+      await acquireRegLockAndGuard(client, category_id, p1Id, p2Id);
+      const r = await client.query(
+        `INSERT INTO entries (
+          category_id,
+          player_1_id,
+          player_2_id,
+          registration_status,
+          payment_status,
+          ic_document_url,
+          passport_url,
+          student_card_url
+        ) VALUES ($1, $2, $3, 'pending', 'unpaid', $4, $5, $6)
+        RETURNING *`,
+        [
+          category_id,
+          p1Id,
+          p2Id,
+          ic_document_url || null,
+          passport_url || null,
+          student_card_url || null,
+        ]
+      );
+      return r.rows[0];
+    }).catch((err: any) => {
+      if (err instanceof RegistrationConflictError) {
+        return { __conflict: true };
+      }
+      throw err;
+    });
 
-    const entry = result.rows[0];
+    if ((entry as any)?.__conflict) {
+      return NextResponse.json({ error: "You are already registered for this category" }, { status: 409 });
+    }
 
     return NextResponse.json({
       success: true,
@@ -125,46 +141,4 @@ export async function POST(req: NextRequest) {
     console.error("Public registration error:", err);
     return NextResponse.json({ error: "Failed to create registration" }, { status: 500 });
   }
-}
-
-interface FoundProfile {
-  id: string;
-  tempPassword?: string;
-}
-
-async function findOrCreateProfile(fullName: string, email: string | null, phone: string | null): Promise<FoundProfile> {
-  const name = fullName.trim();
-  if (!name) throw new Error("Empty name");
-
-  // 1) Prefer email match: a returning player (same email) should reuse their
-  //    account and get their name/phone refreshed, NOT hit a duplicate-name error.
-  if (email) {
-    const byEmail = await queryOne("SELECT id FROM profiles WHERE LOWER(email) = LOWER($1)", [email]);
-    if (byEmail) {
-      await query(
-        "UPDATE profiles SET full_name = $1, phone = COALESCE($2, phone), updated_at = now() WHERE id = $3",
-        [name, phone, byEmail.id]
-      );
-      return { id: byEmail.id };
-    }
-  }
-
-  // 2) Exact name match
-  const existing = await queryOne("SELECT id FROM profiles WHERE full_name = $1", [name]);
-  if (existing) return { id: existing.id };
-
-  // 3) Case-insensitive name fallback
-  const ci = await queryOne("SELECT id FROM profiles WHERE LOWER(full_name) = LOWER($1)", [name]);
-  if (ci) return { id: ci.id };
-
-  // 4) Create a new profile with a one-time password so the player can log in
-  //    (shown once on the success screen). Uses salted scrypt hashing.
-  const genEmail = email || `p_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@tuah.local`;
-  const tempPassword = Math.random().toString(36).slice(2, 10);
-  const passwordHash = hashPassword(tempPassword);
-  const result = await query(
-    `INSERT INTO profiles (email, full_name, phone, password_hash, role) VALUES ($1, $2, $3, $4, 'player') RETURNING id`,
-    [genEmail, name, phone, passwordHash]
-  );
-  return { id: result.rows[0].id, tempPassword };
 }

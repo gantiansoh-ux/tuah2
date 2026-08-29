@@ -91,7 +91,7 @@ export async function POST(
          FROM entries e
          LEFT JOIN profiles p1 ON p1.id = e.player_1_id
          LEFT JOIN profiles p2 ON p2.id = e.player_2_id
-         WHERE e.category_id = $1 AND e.status != 'withdrawn'
+         WHERE e.category_id = $1 AND (e.status IS NULL OR e.status NOT IN ('withdrawn', 'disqualified'))
          AND (e.registration_status IS NULL OR e.registration_status != 'rejected')`,
         [cat.id]
       );

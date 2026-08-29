@@ -332,11 +332,11 @@ export default function AudiencePortalPage({
                       }
                       try {
                         setRegMsg(null);
-                        const res = await fetch(`/api/tournament_registrations`, {
+                        // P1-1 arch: unified registration endpoint
+                        const res = await fetch(`/api/tournaments/${tournamentId}/register`, {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({
-                            tournament_id: tournamentId,
                             category_id: cat.id,
                           }),
                         });

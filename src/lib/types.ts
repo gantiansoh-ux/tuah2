@@ -165,12 +165,14 @@ export interface Entry {
   payment_method?: string;
   payment_reference?: string;
   registration_status?: RegistrationStatus;
+  status?: EntryStatus;
   confirmed_at?: string;
   created_at: string;
 }
 
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded';
 export type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+export type EntryStatus = 'registered' | 'confirmed' | 'withdrawn' | 'disqualified' | string;
 
 // ============================================================
 // Coach

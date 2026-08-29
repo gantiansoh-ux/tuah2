@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query, queryOne } from "@/lib/db";
-import { checkRegistrationAllowed } from "@/lib/registration";
+import { queryOne, withTransaction } from "@/lib/db";
+import { checkRegistrationAllowed, acquireRegLockAndGuard, RegistrationConflictError } from "@/lib/registration";
+import { findOrCreateProfile } from "@/lib/profiles";
 
 export async function POST(req: NextRequest) {
   const cookie = req.cookies.get(getCookieName())?.value;
@@ -51,45 +52,34 @@ export async function POST(req: NextRequest) {
       player2Id = await findOrCreateProfile(partner_name.trim());
     }
 
-    // Check for duplicate entry
-    const dupCheck = await queryOne(
-      `SELECT id FROM entries WHERE category_id = $1 AND player_1_id = $2 AND registration_status = 'pending'`,
-      [category_id, entryPlayerId]
-    );
-    if (dupCheck) {
+    // UNIQUE-GATE: ACTIVE cross-position duplicate guard (category + p1 U p2)
+    // now runs INSIDE the transaction, right after the per-category advisory
+    // lock, so the guard's read + this INSERT are atomic (TOCTOU closed) and
+    // overlaps (singles<->doubles, A-in-p1 vs A-in-p2) are caught. On dup, the
+    // guard throws -> mapped to 409. DB unique indexes additionally clamp
+    // same-key singles / doubles-symmetry duplicates.
+    const result = await withTransaction(async (client) => {
+      await acquireRegLockAndGuard(client, category_id, entryPlayerId, player2Id);
+      const r = await client.query(
+        `INSERT INTO entries (category_id, player_1_id, player_2_id, registration_status, confirmed_at)
+         VALUES ($1, $2, $3, 'pending', NULL) RETURNING *`,
+        [category_id, entryPlayerId, player2Id]
+      );
+      return r.rows[0];
+    }).catch((err: any) => {
+      if (err instanceof RegistrationConflictError) {
+        return { __conflict: true };
+      }
+      throw err;
+    });
+
+    if ((result as any)?.__conflict) {
       return NextResponse.json({ error: "You are already registered for this category" }, { status: 409 });
     }
 
-    const result = await query(
-      `INSERT INTO entries (category_id, player_1_id, player_2_id, registration_status, confirmed_at)
-       VALUES ($1, $2, $3, 'pending', NULL) RETURNING *`,
-      [category_id, entryPlayerId, player2Id]
-    );
-
-    return NextResponse.json({ entry: result.rows[0] }, { status: 201 });
+    return NextResponse.json({ entry: result }, { status: 201 });
   } catch (err: any) {
     console.error("Create entry error:", err);
     return NextResponse.json({ error: "Failed to create entry" }, { status: 500 });
   }
-}
-
-async function findOrCreateProfile(fullName: string): Promise<string> {
-  const name = fullName.trim();
-  if (!name) throw new Error("Empty name");
-
-  // Exact match first
-  const existing = await queryOne("SELECT id FROM profiles WHERE full_name = $1", [name]);
-  if (existing) return existing.id;
-
-  // Case-insensitive match
-  const caseInsensitive = await queryOne("SELECT id FROM profiles WHERE LOWER(full_name) = LOWER($1)", [name]);
-  if (caseInsensitive) return caseInsensitive.id;
-
-  // Create new profile for partner
-  const email = `p_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@tuah.local`;
-  const result = await query(
-    `INSERT INTO profiles (email, full_name, role) VALUES ($1, $2, 'player') RETURNING id`,
-    [email, name]
-  );
-  return result.rows[0].id;
 }

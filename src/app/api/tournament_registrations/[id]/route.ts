@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getCookieName } from "@/lib/auth";
-import { query, queryOne } from "@/lib/db";
-import { checkCategoryCapacity } from "@/lib/registration";
+import { queryOne } from "@/lib/db";
 
-// GET /api/tournament_registrations/[id] - Get a specific registration
+// ============================================================
+// /api/tournament_registrations/[id] — READ-ONLY LEGACY ADAPTER (P1-1 arch wave)
+// ------------------------------------------------------------------
+// See route.ts in the parent dir. `entries` is the sole authority; approvals and
+// rejections flow through PATCH /api/entries/[id]. This legacy PATCH is demoted
+// to READ-ONLY and returns 410 — it performs NO state write (HARD GUARD).
+// Only the historic GET (self/org/admin visibility) is preserved.
+// ============================================================
+
+// GET /api/tournament_registrations/[id] - read a legacy registration (history)
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -38,88 +46,24 @@ export async function GET(
 
     // Don't leak the internal join column back to the caller.
     const { organizer_id, ...safe } = registration;
-    return NextResponse.json({ registration: safe });
+    return NextResponse.json({ registration: { ...safe, legacy: true } });
   } catch (err: any) {
     console.error("Get registration error:", err);
     return NextResponse.json({ error: "Failed to load registration" }, { status: 500 });
   }
 }
 
-// PATCH /api/tournament_registrations/[id] - approve or reject
-// Also handles entries: approving sets entry registration_status='approved' + confirmed_at=NOW()
+// PATCH /api/tournament_registrations/[id] — READ-ONLY (NO STATE WRITE)
+// Approval/rejection now flows through PATCH /api/entries/[id]
+// (registration_status). This legacy handler refuses to write and returns 410.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const cookie = req.cookies.get(getCookieName())?.value;
-  if (!cookie) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const payload = await verifyToken(cookie);
-  if (!payload) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id } = await params;
-  try {
-    const body = await req.json();
-    const { status: newStatus } = body;
-    if (!newStatus || !["approved", "rejected"].includes(newStatus)) {
-      return NextResponse.json({ error: "Status must be 'approved' or 'rejected'" }, { status: 400 });
-    }
-
-    // Verify organizer owns the tournament
-    const check = await query(
-      `SELECT r.id, r.tournament_id, r.profile_id, r.category_id
-       FROM tournament_registrations r
-       JOIN tournaments t ON t.id = r.tournament_id
-       WHERE r.id = $1 AND t.organizer_id = $2`,
-      [id, payload.userId]
-    );
-    if (check.rows.length === 0) {
-      return NextResponse.json({ error: "Not found or not yours" }, { status: 403 });
-    }
-
-    const reg = check.rows[0];
-
-    // Update registration status
-    const result = await query(
-      `UPDATE tournament_registrations SET status = $1 WHERE id = $2 RETURNING *`,
-      [newStatus, id]
-    );
-
-    // On approve, auto-create an entry if category_id exists
-    if (newStatus === "approved") {
-      if (reg.category_id && reg.profile_id) {
-        try {
-          const dup = await query(
-            `SELECT id FROM entries WHERE category_id = $1 AND player_1_id = $2 LIMIT 1`,
-            [reg.category_id, reg.profile_id]
-          );
-          // BUG-012: capacity gate before creating/finalizing the entry
-          const cap = await checkCategoryCapacity(
-            reg.category_id,
-            { excludeEntryId: dup.rows.length > 0 ? dup.rows[0].id : undefined }
-          );
-          if (!cap.allowed) {
-            return NextResponse.json({ error: cap.error }, { status: cap.status });
-          }
-          if (dup.rows.length === 0) {
-            await query(
-              `INSERT INTO entries (category_id, player_1_id, registration_status, confirmed_at)
-               VALUES ($1, $2, 'approved', NOW())`,
-              [reg.category_id, reg.profile_id]
-            );
-          } else {
-            await query(
-              `UPDATE entries SET registration_status = 'approved', confirmed_at = NOW()
-               WHERE id = $1`,
-              [dup.rows[0].id]
-            );
-          }
-        } catch (_) {}
-      }
-    }
-
-    return NextResponse.json({ registration: result.rows[0] });
-  } catch (err: any) {
-    console.error("Update registration error:", err);
-    return NextResponse.json({ error: "Failed to update" }, { status: 500 });
-  }
+  return NextResponse.json(
+    {
+      error: "Approval/rejection moved to PATCH /api/entries/[id]. This legacy endpoint is read-only (no state is written).",
+    },
+    { status: 410 }
+  );
 }

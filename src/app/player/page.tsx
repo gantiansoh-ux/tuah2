@@ -111,19 +111,26 @@ export default function PlayerDashboardPage() {
   }
 
   // True if the player has an active (pending/approved) registration in this tournament
+  // P1-1 arch: registration state derives from `entries` (returned by
+  // /api/player/my-registrations as status=registration_status, entry_status).
+  // Withdrawn / disqualified entries no longer count as "joined".
+  const isActiveReg = (r: any) =>
+    (r.status === "pending" || r.status === "approved") &&
+    r.entry_status !== "withdrawn" && r.entry_status !== "disqualified";
+
   const isJoined = (tid: string) =>
     (myRegistrations || []).some(
-      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+      (r) => r.tournament_id === tid && isActiveReg(r)
     );
 
   // Has at least one APPROVED registration (confirmed) vs still pending review
   const hasApproved = (tid: string) =>
-    (myRegistrations || []).some((r) => r.tournament_id === tid && r.status === "approved");
+    (myRegistrations || []).some((r) => r.tournament_id === tid && r.status === "approved" && isActiveReg(r));
 
   // Earliest joined date for a tournament (for the "Joined on" timestamp)
   const joinedDate = (tid: string) => {
     const list = (myRegistrations || []).filter(
-      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+      (r) => r.tournament_id === tid && isActiveReg(r)
     );
     if (list.length === 0) return null;
     const dates = list.map((r) => (r.registered_at ? new Date(r.registered_at).getTime() : 0));
@@ -134,7 +141,7 @@ export default function PlayerDashboardPage() {
   // Map tournament_id -> pending count of active registrations (to show "Joining N groups")
   const joinedCategories = (tid: string) =>
     (myRegistrations || []).filter(
-      (r) => r.tournament_id === tid && (r.status === "pending" || r.status === "approved")
+      (r) => r.tournament_id === tid && isActiveReg(r)
     );
 
   // Open the category-selection dialog for a tournament before joining.
@@ -166,6 +173,9 @@ export default function PlayerDashboardPage() {
   }
 
   // Submit registration with the chosen category (方案 A).
+  // P1-1 arch: registration flows through the SOLE unified endpoint
+  // POST /api/tournaments/[id]/register (which wraps entries/create gate +
+  // ACTIVE dup guard + single insert into `entries`).
   async function handleJoin(tournamentId: string, categoryId: string) {
     if (!user) {
       router.push("/auth/login");
@@ -173,11 +183,10 @@ export default function PlayerDashboardPage() {
     }
     setJoining(tournamentId);
     try {
-      const res = await fetch(`/api/tournament_registrations`, {
+      const res = await fetch(`/api/tournaments/${tournamentId}/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tournament_id: tournamentId,
           category_id: categoryId || null,
         }),
       });
