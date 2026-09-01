@@ -190,7 +190,7 @@ export function computeGroupStandings(
       const r1 = rows.get(m.entry_1_id ?? "");
       const r2 = rows.get(m.entry_2_id ?? "");
       if (!r1 || !r2) continue;
-      if (m.status !== "completed") continue;
+      if (m.status !== "completed" && m.status !== "walkover") continue;
       const winner = m.winner_entry_id;
       if (winner === m.entry_1_id) {
         r1.wins++; r2.losses++; r1.played++; r2.played++;

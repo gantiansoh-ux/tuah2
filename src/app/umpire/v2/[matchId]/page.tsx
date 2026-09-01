@@ -61,6 +61,8 @@ export default function UmpirePadV2Page({
   const matchRef = useRef<Match | null>(null);
   const scoreRef = useRef({ s1: 0, s2: 0 });
   const lastScoreTapRef = useRef(0);
+  // Pending next-game info captured when a game ends (used by the end-change gate).
+  const pendingNextGameRef = useRef<{ num: number; lastServer: 1 | 2; winnerPlayer: 1 | 2 } | null>(null);
   useEffect(() => { gamesRef.current = games; }, [games]);
   useEffect(() => { matchRef.current = match; }, [match]);
 
@@ -213,6 +215,23 @@ export default function UmpirePadV2Page({
   // Position swap: if winner chose opposite side, swap display
   const [displaySwapped, setDisplaySwapped] = useState(false);
   const [choosingSide, setChoosingSide] = useState(false);
+  // ── UP-2/UP-3: Player court-end change state (distinct from `serveSide`).
+  // `playerEndsSwapped` tracks whether the two entrants' PHYSICAL court halves
+  // are swapped versus the initial (coin-toss) alignment. Scope rule: keep
+  // this separate from server/serveSide — a serve-side flip does NOT move the
+  // players' ends, and an end change does NOT by itself change who serves.
+  const [playerEndsSwapped, setPlayerEndsSwapped] = useState(false);
+  // True when the between-games end-change prompt is showing.
+  const [endChangeGate, setEndChangeGate] = useState(false);
+  // True when the deciding-game at-11 end-change prompt is showing.
+  const [endChangeAt11Gate, setEndChangeAt11Gate] = useState(false);
+  // The game number whose at-11 change was already acknowledged this set.
+  const at11AckRef = useRef<number | null>(null);
+  // WO modal state: 0 = hidden, 1 = choose winner, 2 = confirm + reason.
+  const [woStep, setWoStep] = useState<0 | 1 | 2>(0);
+  const [woWinner, setWoWinner] = useState<1 | 2 | null>(null);
+  const [woReason, setWoReason] = useState<"no_show" | "injury" | "other">("no_show");
+  const [woOtherText, setWoOtherText] = useState("");
 
   // Load entries for names
   const [entry1Name, setEntry1Name] = useState("Player 1");
@@ -332,8 +351,9 @@ export default function UmpirePadV2Page({
         setGames([gameRes.game]);
         setPhase("coin_toss");
       } else if (gamesData.length === 0) {
-        // All games completed OR none exist - if match is not over, start fresh
-        if (data.match?.status === 'completed') {
+        // All games completed OR none exist (incl. walkover with no games) -
+        // if match is not open, show match-over/WO; otherwise start fresh.
+        if (data.match?.status === 'completed' || data.match?.status === 'walkover') {
           setPhase("match_over");
         } else {
           const gameRes = await api(`/api/games/create`, {
@@ -384,10 +404,10 @@ export default function UmpirePadV2Page({
         }
       }
 
-      // Set match to playing ONLY when not completed. PATCHing a completed match
-      // triggers the server-side Umpire-Challenge reopen which CLEARS the winner
-      // slot auto-advanced into the next round — corrupting the bracket on reload.
-      if (data.match?.status !== 'completed') {
+      // Set match to playing ONLY when not completed/walkover. PATCHing a
+      // completed match triggers the server-side Umpire-Challenge reopen which
+      // CLEARS the winner slot auto-advanced into the next round.
+      if (data.match?.status !== 'completed' && data.match?.status !== 'walkover') {
         await api(`/api/matches/${matchId}`, {
           method: "PATCH",
           body: JSON.stringify({ status: "playing" }),
@@ -416,7 +436,7 @@ export default function UmpirePadV2Page({
     const _now = Date.now();
     if (_now - lastScoreTapRef.current < 300) return;
     lastScoreTapRef.current = _now;
-    if (!currentGame || phase === "game_over" || phase === "match_over") return;
+    if (!currentGame || phase === "game_over" || phase === "match_over" || endChangeAt11Gate) return;
 
     // Read LATEST score from ref (fixes rapid-click losing points due to stale closure)
     const curS1 = scoreRef.current.s1;
@@ -435,6 +455,29 @@ export default function UmpirePadV2Page({
     }]);
 
     const result = checkGameOver(newScore1, newScore2, config);
+
+    // ── UP-3: Deciding-game end change at 11 ──
+    // When the first side reaches exactly 11 in the deciding (last) game,
+    // enforce a mandatory end change: gate further scoring until the umpire
+    // acknowledges. This is a player court-end swap, NOT a service-court
+    // rotation and NOT a game reset. It never creates a new game row and never
+    // touches the score. Only triggers on the live transition to 11 for a
+    // given game (at11AckRef dedupes so reloads / repeated renders don't re-prompt).
+    const isDecidingGame = currentGame.game_number === config.best_of;
+    const leaderAt11 =
+      (newScore1 === 11 && newScore1 > newScore2) ||
+      (newScore2 === 11 && newScore2 > newScore1) ||
+      (newScore1 === 11 && newScore1 === newScore2);
+    if (
+      isDecidingGame &&
+      !result.isGameOver &&
+      leaderAt11 &&
+      at11AckRef.current !== currentGame.game_number
+    ) {
+      at11AckRef.current = currentGame.game_number;
+      setEndChangeAt11Gate(true);
+      return;
+    }
 
     if (result.isGameOver) {
       const entry1Id = match?.entry_1_id || '';
@@ -481,37 +524,15 @@ export default function UmpirePadV2Page({
       } else {
         setLastAction(player);
         showToast(`${result.winner === "player1" ? entry1Name : entry2Name} Wins Game!`, result.winner === "player1" ? "bg-blue-600" : "bg-red-600", "text-white");
-        setTimeout(() => {
-          // Create next game (offline: use local temp id, synced later)
-          const nextNum = currentGame.game_number + 1;
-          api(`/api/games/create`, {
-            method: "POST",
-            body: JSON.stringify({ match_id: matchId, game_number: nextNum }),
-          }).then((res) => {
-            setGames(prev => [...prev, res.game]);
-            setCurrentGameIdx(prev => prev + 1);
-            setServeSide(s => s === "left" ? "right" : "left");
-            setLastAction(null);
-            setPhase("playing");
-            // Reset score ref IMMEDIATELY so rapid clicks on the new game
-            // don't inherit the previous game's score as their base.
-            scoreRef.current = { s1: 0, s2: 0 };
-          }).catch((e) => {
-            if (isNetErr(e)) {
-              setOfflineMode(true);
-              const tmp = { id: `local-${nextNum}`, match_id: matchId, game_number: nextNum, score_entry_1: 0, score_entry_2: 0, status: "playing", current_server: player, winner_id: null };
-              const nextGames = [...gamesRef.current, tmp];
-              setGames(nextGames);
-              setCurrentGameIdx(prev => prev + 1);
-              setServeSide(s => s === "left" ? "right" : "left");
-              setLastAction(null);
-              setPhase("playing");
-              scoreRef.current = { s1: 0, s2: 0 };
-              markOffline("📡 OFFLINE - next game ready locally", nextGames);
-            } else throw e;
-          });
-        }, 5000);
+        // UP-2: between-games end change. After the game (and before the next
+        // game for BO3 / any multi-game set) the players must change ends. Show
+        // a gate and only on umpire acknowledgment create the next game with
+        // the player halves swapped. We intentionally do NOT flip `serveSide`
+        // here — serve-side is a separate concept from player court-end.
+        const nextNum = currentGame.game_number + 1;
+        pendingNextGameRef.current = { num: nextNum, lastServer: player, winnerPlayer: result.winner === "player1" ? 1 : 2 };
         setPhase("game_over");
+        setEndChangeGate(true);
       }
     } else {
       // Optimistic UI update FIRST
@@ -587,6 +608,99 @@ export default function UmpirePadV2Page({
       }
     }
     showToast("↩ Point Undone", "bg-teal-600", "text-white");
+  }
+
+  // ── UP-2: Between-games end change (acknowledge) ──
+  // Creates the next game at 0-0 and swaps the players' physical court halves.
+  // Server for the new game follows the last point winner (badminton rule),
+  // which is captured independently of the end swap. Game 1's result is
+  // preserved (it is already persisted as a completed game row).
+  async function confirmEndChange() {
+    const pending = pendingNextGameRef.current;
+    if (!pending) return;
+    setEndChangeGate(false);
+    // Players change ends: swap which entrant is on the left half.
+    setDisplaySwapped((s) => !s);
+    setPlayerEndsSwapped((s) => !s);
+    setPhase("playing");
+    setLastAction(null);
+    const nextNum = pending.num;
+    try {
+      const res = await api(`/api/games/create`, {
+        method: "POST",
+        body: JSON.stringify({ match_id: matchId, game_number: nextNum }),
+      });
+      setGames((prev) => [...prev, res.game]);
+      setCurrentGameIdx((prev) => prev + 1);
+      scoreRef.current = { s1: 0, s2: 0 };
+    } catch (e) {
+      if (isNetErr(e)) {
+        // Offline: create a local game row to be synced later.
+        setOfflineMode(true);
+        const tmp = {
+          id: `local-${nextNum}`, match_id: matchId, game_number: nextNum,
+          score_entry_1: 0, score_entry_2: 0, status: "playing",
+          current_server: pending.lastServer, winner_id: null,
+          created_at: new Date().toISOString(),
+        } as Game;
+        const nextGames = [...gamesRef.current, tmp];
+        setGames(nextGames);
+        setCurrentGameIdx((prev) => prev + 1);
+        scoreRef.current = { s1: 0, s2: 0 };
+        markOffline("📡 OFFLINE - next game ready locally", nextGames);
+      } else throw e;
+    }
+    pendingNextGameRef.current = null;
+  }
+
+  // ── UP-3: Deciding-game at-11 end change (acknowledge) ──
+  // Swaps the players' physical court halves WITHOUT creating a new game and
+  // WITHOUT resetting the score. Service is unaffected (server is driven by
+  // lastAction / current_server, which are untouched).
+  function acknowledgeEndChangeAt11() {
+    setEndChangeAt11Gate(false);
+    setDisplaySwapped((s) => !s);
+    setPlayerEndsSwapped((s) => !s);
+  }
+
+  // ── UP-1: Walkover (WO) ──
+  // Umpire taps WO, picks the winner (the player who is awarded the match),
+  // optionally records a reason, confirms. Posts status=walkover + winner to
+  // the server, which advances the bracket and records standings. No game
+  // rows are fabricated. Only allowed from an in-progress match (not a
+  // completed one — the server also enforces this).
+  async function confirmWalkover() {
+    if (!woWinner) return;
+    const winnerId = woWinner === 1 ? match?.entry_1_id : match?.entry_2_id;
+    const reasonText =
+      woReason === "other"
+        ? woOtherText.trim() || "Other"
+        : woReason === "no_show"
+        ? "No-show"
+        : "Injury";
+    const body = {
+      status: "walkover",
+      winner_id: winnerId || null,
+      walkover_reason: `WO: ${reasonText}`,
+    };
+    try {
+      await api(`/api/matches/${matchId}`, { method: "PATCH", body: JSON.stringify(body) });
+    } catch (e) {
+      if (isNetErr(e)) {
+        offlineActionsRef.current.push({ type: "match", payload: body });
+        markOffline();
+      } else {
+        showToast("⚠️ Walkover failed", "bg-red-600", "text-white");
+        return;
+      }
+    }
+    const winnerName = woWinner === 1 ? entry1Name : entry2Name;
+    setMatch((m) => (m ? { ...m, status: "walkover", winner_entry_id: winnerId || null } as unknown as Match : m));
+    // Deliberately do NOT mutate any game row: a walkover must not fabricate a
+    // normal game/score result. The match_over screen reports "No game played".
+    setWoStep(0);
+    setPhase("match_over");
+    showToast(`🏆 WALKOVER - ${winnerName} wins`, "bg-purple-600", "text-white");
   }
 
   async function handleFault(entry: "entry_1" | "entry_2", playerNumber: 1 | 2 | null = null) {
@@ -841,19 +955,23 @@ export default function UmpirePadV2Page({
     );
   }
 
-  // Match Over
-  // Match Over
-  // Match Over
+  // Match Over (normal, WO, red-card)
   if (phase === "match_over") {
     const winnerId = match?.winner_entry_id || match?.winner_id;
     const winnerName = winnerId === match?.entry_1_id ? entry1Name : entry2Name;
+    const isWalkover = match?.status === "walkover";
     return (
       <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
-        <div className="text-7xl mb-6">🏆</div>
-        <h1 className="text-5xl font-black mb-4">Match Complete!</h1>
-        <p className="text-4xl font-black text-emerald-400 mb-4">{winnerName} Wins!</p>
-        <p className="text-2xl text-gray-400 mb-8">{p1Wins} - {p2Wins}</p>
-        {undoStack.length > 0 && (
+        <div className="text-7xl mb-6">{isWalkover ? "📋" : "🏆"}</div>
+        <h1 className="text-5xl font-black mb-4">{isWalkover ? "Walkover" : "Match Complete!"}</h1>
+        <p className="text-4xl font-black text-emerald-400 mb-2">{winnerName} Wins!</p>
+        {isWalkover && (
+          <p className="text-gray-400 text-xl mb-1">
+            By walkover ({(match as any)?.notes || "No reason recorded"})
+          </p>
+        )}
+        <p className="text-2xl text-gray-400 mb-8">{isWalkover ? "No game played" : `${p1Wins} - ${p2Wins}`}</p>
+        {undoStack.length > 0 && !isWalkover && (
           <button
             onClick={handleUndo}
             className="bg-amber-600 hover:bg-amber-500 text-white px-8 py-4 rounded-2xl text-xl font-bold mb-4 transition-all active:scale-95"
@@ -869,21 +987,24 @@ export default function UmpirePadV2Page({
     );
   }
 
-  // Game Over (between games)
+  // Game Over (between games) — now a mandatory END-CHANGE gate.
   if (phase === "game_over") {
-    const gameWinner = score1 > score2 ? entry1Name : entry2Name;
     return (
       <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-8">
-        <div className="text-6xl mb-4">🏸</div>
-        <h1 className="text-4xl font-black mb-2">Game {currentGameIdx + 1}</h1>
-        <p className="text-2xl font-black text-emerald-400 mb-4">{gameWinner} Wins Game!</p>
-        <p className="text-gray-400 mb-2">
-          {score1} - {score2}
-        </p>
+        <div className="text-6xl mb-4">🔄</div>
+        <h1 className="text-4xl font-black mb-2">Change Ends</h1>
+        <p className="text-2xl font-black text-amber-400 mb-4">Players: switch court ends</p>
+        <p className="text-gray-400 mb-2 text-xl">Before starting Game {currentGameIdx + 2}</p>
         <p className="text-gray-500 mb-8">
           Sets: {p1Wins} - {p2Wins} (Best of {config.best_of})
         </p>
-        <div className="animate-pulse text-gray-400">Starting next game...</div>
+        <button
+          onClick={confirmEndChange}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white px-12 py-4 rounded-2xl text-2xl font-black transition-all active:scale-95 shadow-xl"
+        >
+          ✓ Ends Changed — Start Game {currentGameIdx + 2}
+        </button>
+        <p className="text-gray-600 text-sm mt-4">Tap only after players have physically swapped sides.</p>
       </div>
     );
   }
@@ -914,6 +1035,13 @@ export default function UmpirePadV2Page({
               {syncing ? "🔄 SYNCING..." : `📡 OFFLINE${pendingCount > 0 ? ` ${pendingCount}` : ""}`}
             </span>
           )}
+          <button
+            onClick={() => { setWoWinner(null); setWoReason("no_show"); setWoOtherText(""); setWoStep(1); }}
+            className="text-xs px-3 md:px-4 py-1 rounded font-black bg-purple-700 hover:bg-purple-600 text-white border border-purple-500 transition-all"
+            title="Declare walkover (no game played)"
+          >
+            📋 WO
+          </button>
           <span className="text-yellow-400 font-mono font-bold">{timerDisplay}</span>
           <button
             onClick={toggleTimer}
@@ -1177,6 +1305,86 @@ export default function UmpirePadV2Page({
             <div className="flex gap-3">
               <button onClick={() => executeCard("red")} className="flex-1 bg-red-700 text-white py-3 rounded-xl font-bold hover:bg-red-600">Execute</button>
               <button onClick={() => setCardStep(prev => ({ ...prev, step: "none" }))} className="flex-1 bg-gray-700 text-white py-3 rounded-xl font-bold hover:bg-gray-600">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== UP-3: DECIDING-GAME END CHANGE AT 11 (gate) ========== */}
+      {endChangeAt11Gate && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[60] p-8">
+          <div className="bg-gray-800 rounded-3xl p-6 md:p-8 w-full max-w-md border-2 border-amber-400 text-center">
+            <div className="text-6xl mb-3">🔄</div>
+            <h2 className="text-3xl font-black text-amber-400 mb-2">Change Ends</h2>
+            <p className="text-gray-300 text-xl mb-1">First side reached 11</p>
+            <p className="text-gray-400 mb-2">Deciding game (Game {currentGame?.game_number || config.best_of})</p>
+            <p className="text-white font-bold text-lg mb-6">{score1} - {score2}</p>
+            <p className="text-gray-500 text-sm mb-6">Players must switch court ends now. Scoring is paused. This does not reset the score or create a new game.</p>
+            <button
+              onClick={acknowledgeEndChangeAt11}
+              className="w-full bg-amber-500 hover:bg-amber-400 text-black py-4 rounded-2xl text-xl font-black transition-all active:scale-95"
+            >
+              ✓ Ends Changed — Resume
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========== UP-1: WALKOVER MODAL ========== */}
+      {woStep === 1 && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-8">
+          <div className="bg-gray-800 rounded-3xl p-6 md:p-8 w-full max-w-md border border-purple-500">
+            <h2 className="text-2xl font-bold text-purple-400 mb-1">📋 Walkover</h2>
+            <p className="text-gray-400 mb-5">Who wins by walkover? (no game played)</p>
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => { setWoWinner(1); setWoStep(2); }}
+                className={`flex-1 py-4 rounded-2xl text-lg font-bold transition-all ${woWinner === 1 ? "bg-blue-600 text-white" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}
+              >
+                {entry1Name}{entry1Name2 ? " & team" : ""}
+              </button>
+              <button
+                onClick={() => { setWoWinner(2); setWoStep(2); }}
+                className={`flex-1 py-4 rounded-2xl text-lg font-bold transition-all ${woWinner === 2 ? "bg-red-600 text-white" : "bg-gray-700 text-gray-200 hover:bg-gray-600"}`}
+              >
+                {entry2Name}{entry2Name2 ? " & team" : ""}
+              </button>
+            </div>
+            <button onClick={() => setWoStep(0)} className="w-full bg-gray-700 text-white py-3 rounded-xl font-bold hover:bg-gray-600">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {woStep === 2 && woWinner && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60] p-8">
+          <div className="bg-gray-800 rounded-3xl p-6 md:p-8 w-full max-w-md border border-purple-500">
+            <h2 className="text-2xl font-bold text-purple-400 mb-1">Confirm Walkover</h2>
+            <p className="text-gray-300 mb-4">
+              {woWinner === 1 ? entry1Name : entry2Name}{woWinner === 1 && entry1Name2 ? " & team" : woWinner === 2 && entry2Name2 ? " & team" : ""} wins the match.
+            </p>
+            <label className="block text-gray-400 text-sm mb-1" htmlFor="wo-reason">Reason (optional)</label>
+            <select
+              id="wo-reason"
+              className="w-full bg-gray-700 text-white rounded-xl px-3 py-2 mb-2"
+              value={woReason}
+              onChange={(e) => setWoReason(e.target.value as any)}
+            >
+              <option value="no_show">No-show</option>
+              <option value="injury">Injury</option>
+              <option value="other">Other…</option>
+            </select>
+            {woReason === "other" && (
+              <input
+                type="text"
+                className="w-full bg-gray-700 text-white rounded-xl px-3 py-2 mb-4 border border-gray-600"
+                placeholder="Reason…"
+                value={woOtherText}
+                onChange={(e) => setWoOtherText(e.target.value)}
+              />
+            )}
+            <div className="flex gap-3 mt-4">
+              <button onClick={confirmWalkover} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-bold">Confirm WO</button>
+              <button onClick={() => setWoStep(1)} className="flex-1 bg-gray-700 text-white py-3 rounded-xl font-bold hover:bg-gray-600">Back</button>
             </div>
           </div>
         </div>

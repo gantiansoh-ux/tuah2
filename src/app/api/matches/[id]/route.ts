@@ -252,11 +252,33 @@ export async function PATCH(
       next_match_id: "next_match_id",
       toss_winner_entry_id: "toss_winner_entry_id",
       toss_chose_side: "toss_chose_side",
+      // Walkover (WO): reason is stored on the existing `notes` column to avoid
+      // any DB schema change. `walkover_reason` is a convenience alias the
+      // umpire pad sends; it maps onto the notes field. A separate
+      // `wins_by_walkover` boolean field is not added (no schema change needed).
+      walkover_reason: "notes",
+      walkover_notes: "notes",
     };
 
     const sets: string[] = [];
     const values: any[] = [];
     let idx = 1;
+
+    // ── WO guard (#UP-2): an already-completed match cannot accidentally be
+    // converted to walkover. If the caller asks to make this match a walkover
+    // but the current row is `completed`, reject it unless the caller is the
+    // organizer/admin AND explicitly passed `force_walkover` (controlled
+    // reopen, e.g. an organizer correcting a mistaken completion). The regular
+    // umpire pad never sends `force_walkover`, so a stray/tap or bug cannot
+    // silently mutate a finished match. ──
+    const prevRowCheck = await queryOne(`SELECT * FROM matches WHERE id = $1`, [id]);
+    const wantsWalkover = body.status === 'walkover';
+    if (wantsWalkover && prevRowCheck?.status === 'completed' && !body.force_walkover) {
+      return NextResponse.json(
+        { error: "Cannot convert a completed match to walkover. Use a controlled reopen (organizer) if this was a mistake." },
+        { status: 409 }
+      );
+    }
 
     for (const [key, val] of Object.entries(body)) {
       const dbCol = allowedFields[key];
@@ -286,8 +308,12 @@ export async function PATCH(
     );
 
     // Auto-advance winner + loser logic (supports both winner_id and winner_entry_id aliases)
+    // Fires for BOTH `completed` and `walkover` — a walkover must advance the
+    // bracket exactly like a completed match (winner to next, loser to loser
+    // match / DE), otherwise a WO would stall the bracket.
     const advanceWinner = body.winner_id || body.winner_entry_id;
-    if (body.status === 'completed' && advanceWinner) {
+    const isAdvancingStatus = body.status === 'completed' || body.status === 'walkover';
+    if (isAdvancingStatus && advanceWinner) {
       const currentMatch = result.rows[0];
       const advanceLoser = currentMatch.entry_1_id === advanceWinner
         ? currentMatch.entry_2_id
@@ -343,12 +369,12 @@ export async function PATCH(
       }
     }
 
-    // ── #47: Group+KO — when a group match completes, auto-fill the knockout
-    // stage once ALL group matches are done (cross-group pairings A1-B2, ...) ──
+    // ── #47: Group+KO — when a group match completes (or ends via WO),
+    // auto-fill the knockout stage once ALL group matches are done ──
     const completedRow = result.rows[0];
     if (
       completedRow &&
-      completedRow.status === "completed" &&
+      (completedRow.status === "completed" || completedRow.status === "walkover") &&
       completedRow.bracket_group?.startsWith("group-")
     ) {
       try {
@@ -362,11 +388,12 @@ export async function PATCH(
     // #47: ignore unfillable null-null KO placeholders (e.g. whole group withdrew)
     // #50: runs AFTER group→KO fill so a freshly-filled KO stage is never
     //      miscounted as "nothing left" (premature COMPLETED bug).
-    if (body.status === 'completed') {
+    // WO counts as a finished match (status != scheduled/in_progress).
+    if (isAdvancingStatus) {
       const updatedMatch = result.rows[0];
       const remaining = await query(
         `SELECT COUNT(*)::int AS cnt FROM matches
-         WHERE tournament_id = $1 AND status != 'completed'
+         WHERE tournament_id = $1 AND status NOT IN ('completed', 'walkover')
          AND NOT (bracket_group = 'ko' AND entry_1_id IS NULL AND entry_2_id IS NULL)`,
         [updatedMatch.tournament_id]
       );
@@ -378,12 +405,13 @@ export async function PATCH(
       }
     }
 
-    // ── Umpire Challenge revert: match was completed, now being reopened ──
+    // ── Umpire Challenge revert: match was completed (or walkover), now reopened ──
     // Undo after game point (even after match over) must revert:
     // match status + winner, the auto-advanced slot in next match, and tournament status.
     const newRow = result.rows[0];
-    const wasCompleted = prevRow?.status === 'completed';
-    const isReopened = wasCompleted && newRow?.status !== 'completed';
+    const wasTerminal =
+      prevRow?.status === 'completed' || prevRow?.status === 'walkover';
+    const isReopened = wasTerminal && newRow?.status !== 'completed' && newRow?.status !== 'walkover';
     if (isReopened && prevRow) {
       // 1. Clear the winner slot that was auto-advanced into the next match.
       // #51: clear BY VALUE (whichever slot actually holds the winner) instead of
@@ -452,7 +480,9 @@ async function maybeFillGroupKnockout(categoryId: string): Promise<void> {
   const groupMatches = all.filter((m: any) => m.bracket_group?.startsWith("group-"));
   const koMatches = all.filter((m: any) => m.bracket_group === "ko");
   if (groupMatches.length === 0 || koMatches.length === 0) return;
-  if (!groupMatches.every((m: any) => m.status === "completed")) return;
+  // WU-1: a walkover counts as a finished group match for the "all done" gate,
+  // otherwise a WO-ended group match would block the KO stage from filling.
+  if (!groupMatches.every((m: any) => m.status === "completed" || m.status === "walkover")) return;
 
   const entries = await queryAll(
     `SELECT e.*, COALESCE(p1.full_name,'') AS player_1_name, COALESCE(p2.full_name,'') AS player_2_name
