@@ -115,7 +115,7 @@ export async function GET(
 
       const allGroupDone =
         groupMatches.length > 0 &&
-        groupMatches.every((m: any) => m.status === "completed");
+        groupMatches.every((m: any) => m.status === "completed" || m.status === "walkover");
       const pairings = allGroupDone ? buildKOPairings(standings, advance) : [];
 
       const badges: Record<string, string> = {};

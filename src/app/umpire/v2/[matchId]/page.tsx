@@ -475,6 +475,20 @@ export default function UmpirePadV2Page({
       at11AckRef.current !== currentGame.game_number
     ) {
       at11AckRef.current = currentGame.game_number;
+      // #B2 fix: commit the triggering 11th point BEFORE gating. The optimistic
+      // UI update + persistence otherwise run in the non-game-over else-branch
+      // below, which this early-return would skip — leaving the 11th point only
+      // in scoreRef (not DB, not the gate modal). Persist it exactly like a
+      // normal point, then show the end-change gate on top of the correct score.
+      setGames(
+        games.map((g) =>
+          g.id === currentGame.id
+            ? { ...g, score_entry_1: newScore1, score_entry_2: newScore2, current_server: player }
+            : g
+        )
+      );
+      setLastAction(player);
+      await safeGameUpdate({ id: currentGame.id, score_entry_1: newScore1, score_entry_2: newScore2, current_server: player });
       setEndChangeAt11Gate(true);
       return;
     }
