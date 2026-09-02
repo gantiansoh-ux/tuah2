@@ -100,6 +100,33 @@ export default function UmpirePadV2Page({
       } else throw e;
     }
   }
+  // BLOCKER 1 (UP-2/UP-3 persist): persist the CURRENT live end-swap parity to
+  // matches.ends_swapped (additive PATCH via allowedFields). Returns:
+  //   'ok'        -> server accepted the new parity.
+  //   'offline'   -> network failure; action BUFFERED into the offline journal
+  //                  (replayed in order by syncOfflineState on reconnect) and
+  //                  in-memory state is KEPT (matches the existing toss/match
+  //                  offline convention; server reconciles to same value later).
+  //   'error'     -> non-network server rejection; NOT persisted. Caller MUST
+  //                  revert its optimistic state so UI never diverges from DB.
+  // A false value is never dropped (val !== undefined guard => false is PATCHed).
+  async function persistEndsSwapped(nextParity: boolean): Promise<'ok' | 'offline' | 'error'> {
+    const body = { ends_swapped: nextParity };
+    try {
+      await api(`/api/matches/${matchId}`, { method: "PATCH", body: JSON.stringify(body) });
+      // Reflect into in-memory match so a reload-from-offline-snapshot stays coherent.
+      setMatch((m) => (m ? { ...m, ends_swapped: nextParity } : m));
+      return 'ok';
+    } catch (e) {
+      if (isNetErr(e)) {
+        offlineActionsRef.current.push({ type: "match", payload: body });
+        markOffline("End change saved offline - will sync to server");
+        return 'offline';
+      }
+      console.error("persist ends_swapped failed:", e);
+      return 'error';
+    }
+  }
   async function safeLog(payload: any) {
     try {
       await api(`/api/point_logs`, { method: "POST", body: JSON.stringify(payload) });
@@ -221,6 +248,12 @@ export default function UmpirePadV2Page({
   // this separate from server/serveSide — a serve-side flip does NOT move the
   // players' ends, and an end change does NOT by itself change who serves.
   const [playerEndsSwapped, setPlayerEndsSwapped] = useState(false);
+  // BLOCKER 1 (UP-2/UP-3 persist): source of truth for the CURRENT live end-swap
+  // parity (relative to the initial toss alignment). Loaded from the persisted
+  // matches.ends_swapped on reload and flipped on every confirmEndChange /
+  // acknowledgeEndChangeAt11. displaySwapped == toss-base XOR this parity, so a
+  // reload after a live swap restores correct point attribution (not the toss base).
+  const endsSwappedParityRef = useRef<boolean>(false);
   // True when the between-games end-change prompt is showing.
   const [endChangeGate, setEndChangeGate] = useState(false);
   // True when the deciding-game at-11 end-change prompt is showing.
@@ -386,12 +419,33 @@ export default function UmpirePadV2Page({
           if (matchData.toss_winner_entry_id) {
             const tw = matchData.entry_1_id === matchData.toss_winner_entry_id ? 1 : 2;
             setTossWinner(tw);
+            // BLOCKER 1 (UP-2/UP-3 persist): restore CURRENT physical end-swap
+            // orientation. The DB `ends_swapped` is LIVE-SWAP PARITY relative to
+            // the initial coin-toss alignment (default false = toss baseline,
+            // true = exactly one live end-change since baseline; it is toggled on
+            // every confirmEndChange / acknowledgeEndChangeAt11 and never reset
+            // on new-game start). To restore the absolute display orientation we
+            // XOR that parity onto the toss-derived base visual. When no live
+            // swap has happened (ends_swapped=false) we keep the pure coin-toss
+            // orientation (XOR false = identity); when a live swap HAS occurred
+            // (ends_swapped=true) we flip the toss base so point attribution is
+            // not inverted after reload. This intentionally does NOT read
+            // serveSide/current_server.
+            const liveEndsSwappedParity = !!matchData.ends_swapped;
+            endsSwappedParityRef.current = liveEndsSwappedParity;
+            const tossBaseSwapped =
+              matchData.toss_chose_side && (matchData.toss_chose_side === "left" || matchData.toss_chose_side === "right")
+                ? (tw === 2 ? matchData.toss_chose_side === "left" : matchData.toss_chose_side === "right")
+                : (tw === 2); // 'serve' / 'receive': winner's court half is the displayed left
+            const restoredDisplaySwapped = tossBaseSwapped !== liveEndsSwappedParity; // base XOR parity
             if (matchData.toss_chose_side && (matchData.toss_chose_side === "left" || matchData.toss_chose_side === "right")) {
-              setDisplaySwapped(tw === 2 ? matchData.toss_chose_side === "left" : matchData.toss_chose_side === "right");
+              setDisplaySwapped(restoredDisplaySwapped);
+              setPlayerEndsSwapped(liveEndsSwappedParity);
               setServeSide(matchData.toss_chose_side);
               setPhase("choose_serve");
             } else if (matchData.toss_chose_side === "serve" || matchData.toss_chose_side === "receive") {
-              setDisplaySwapped(tw === 2 ? true : false);
+              setDisplaySwapped(restoredDisplaySwapped);
+              setPlayerEndsSwapped(liveEndsSwappedParity);
               setServeSide(matchData.toss_chose_side);
               setPhase("playing");
             } else {
@@ -634,8 +688,13 @@ export default function UmpirePadV2Page({
     if (!pending) return;
     setEndChangeGate(false);
     // Players change ends: swap which entrant is on the left half.
+    // BLOCKER 1 (UP-2 persist): toggle the source-of-truth live end-swap parity
+    // ref + mirrored display state, then persist the NEW parity below. `playerEndsSwapped`
+    // mirrors the parity (false = toss baseline) and is NOT reset on new-game start.
+    const nextParity = !endsSwappedParityRef.current;
+    endsSwappedParityRef.current = nextParity;
     setDisplaySwapped((s) => !s);
-    setPlayerEndsSwapped((s) => !s);
+    setPlayerEndsSwapped(nextParity);
     setPhase("playing");
     setLastAction(null);
     const nextNum = pending.num;
@@ -664,6 +723,23 @@ export default function UmpirePadV2Page({
         markOffline("📡 OFFLINE - next game ready locally", nextGames);
       } else throw e;
     }
+    // BLOCKER 1 (UP-2 persist): after the next game is created, persist the NEW
+    // swapped parity atomically via the match PATCH. Never reset ends_swapped on
+    // new-game start otherwise -- the live-swap parity accumulates across the whole
+    // BO match. On a purely-offline failure the value is BUFFERED into the offline
+    // journal and reconciled on reconnect, so in-memory and server converge. On a
+    // genuine non-network server rejection we REVERT the swap so the pad never
+    // keeps scoring with an orientation the DB refused.
+    const persistResult = await persistEndsSwapped(nextParity);
+    if (persistResult === 'error') {
+      const prevParity = !nextParity;
+      endsSwappedParityRef.current = prevParity;
+      setDisplaySwapped((s) => !s); // undo this swap
+      setPlayerEndsSwapped(prevParity);
+      setMatch((m) => (m ? { ...m, ends_swapped: prevParity } : m));
+      showToast("End change NOT saved by server - reverted", "bg-red-600", "text-white");
+      return;
+    }
     pendingNextGameRef.current = null;
   }
 
@@ -671,10 +747,26 @@ export default function UmpirePadV2Page({
   // Swaps the players' physical court halves WITHOUT creating a new game and
   // WITHOUT resetting the score. Service is unaffected (server is driven by
   // lastAction / current_server, which are untouched).
-  function acknowledgeEndChangeAt11() {
+  async function acknowledgeEndChangeAt11() {
     setEndChangeAt11Gate(false);
+    // BLOCKER 1 (UP-3 persist): toggle the live end-swap parity and persist it,
+    // SAME mechanism as confirmEndChange. No new game row, no score reset,
+    // service/serveSide untouched. Reverts on a genuine server rejection so the
+    // in-memory orientation never diverges from the persisted DB value.
+    const nextParity = !endsSwappedParityRef.current;
+    endsSwappedParityRef.current = nextParity;
     setDisplaySwapped((s) => !s);
-    setPlayerEndsSwapped((s) => !s);
+    setPlayerEndsSwapped(nextParity);
+    const persistResult = await persistEndsSwapped(nextParity);
+    if (persistResult === 'error') {
+      const prevParity = !nextParity;
+      endsSwappedParityRef.current = prevParity;
+      setDisplaySwapped((s) => !s);
+      setPlayerEndsSwapped(prevParity);
+      setMatch((m) => (m ? { ...m, ends_swapped: prevParity } : m));
+      showToast("End change NOT saved by server - reverted", "bg-red-600", "text-white");
+      return;
+    }
   }
 
   // ── UP-1: Walkover (WO) ──

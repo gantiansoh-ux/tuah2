@@ -252,6 +252,10 @@ export async function PATCH(
       next_match_id: "next_match_id",
       toss_winner_entry_id: "toss_winner_entry_id",
       toss_chose_side: "toss_chose_side",
+      // UP-2/UP-3 persist: CURRENT live player court-end swap parity. The umpire
+      // pad v2 toggles and persists this on every end change; it cannot be re-derived
+      // from the toss once a live swap happened (a reload would invert scoring).
+      ends_swapped: "ends_swapped",
       // Walkover (WO): reason is stored on the existing `notes` column to avoid
       // any DB schema change. `walkover_reason` is a convenience alias the
       // umpire pad sends; it maps onto the notes field. A separate

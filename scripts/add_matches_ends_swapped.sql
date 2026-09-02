@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Migration: persist live player court-end swap state on the umpire pad (v2)
+-- ----------------------------------------------------------------------------
+-- Bug (BLOCKER 1, scoring integrity): the v2 umpire pad keeps "ends swapped"
+-- purely in client useState. On reload it is re-derived only from the coin
+-- toss (toss_chose_side), which LOSES any end change that happened live. Since
+-- displaySwapped decides which entrant receives points for a half-screen tap,
+-- a reload after a live swap inverts point attribution for the rest of the
+-- match.
+--
+-- Fix: persist the CURRENT physical end-swap state as a single boolean on
+-- `matches`. `ends_swapped` is defined as the LIVE-SWAP PARITY relative to the
+-- initial coin-toss alignment (NOT the absolute toss orientation):
+--   false (default) = at the toss baseline (no live end swap has occurred)
+--   true            = exactly one live end swap since the toss baseline
+-- Every end change (between-games confirmEndChange, or the deciding-game
+-- at-11 acknowledgeEndChangeAt11) toggles this value.
+--
+-- Default false is the safe baseline for every existing row: no end change has
+-- ever been recorded for legacy matches, so their physical orientation equals
+-- the toss orientation. The pad reconciles absolute display orientation as
+--   displaySwapped = tossDerivedBaseVisual XOR ends_swapped
+--
+-- Additive only. No data rewrite, no other tables/columns/indexes.
+-- ============================================================================
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS ends_swapped BOOLEAN NOT NULL DEFAULT false;

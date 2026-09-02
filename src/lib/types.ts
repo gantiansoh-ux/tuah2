@@ -324,6 +324,10 @@ export interface Match {
   court_status: CourtStatus;
   winner_id?: string | null;
   winner_entry_id?: string | null;
+  // UP-2/UP-3 (BLOCKER 1): persisted live player court-end swap PARITY relative
+  // to the initial coin-toss alignment (false = toss baseline). Toggled on every
+  // confirmEndChange / acknowledgeEndChangeAt11 and never reset on new-game start.
+  ends_swapped?: boolean;
   created_at: string;
 }
 
