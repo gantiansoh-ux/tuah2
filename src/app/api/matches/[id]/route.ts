@@ -284,6 +284,39 @@ export async function PATCH(
       );
     }
 
+    // ── P0-2 WO integrity guard ──
+    // A walkover is BY DEFINITION a match with no game played and an awarded
+    // winner. Two holes existed in the undeployed WO path:
+    //  (a) WO with no winner (`winner_entry_id` would stay NULL) still set
+    //      status='walkover'. Because the match then counts as finished, the
+    //      auto-complete sweep could mark the TOURNAMENT completed while the
+    //      next-round slot was never filled — a false completion / bracket hole.
+    //      The umpire pad already refuses this client-side; the API must too.
+    //  (b) WO on a match that already has SCORED game rows left those rows in
+    //      place, contradicting "no game played" and making group standings
+    //      count the games instead of the WO 1-0. Reject the WO in that case.
+    // `force_walkover` is an organizer-only controlled-reopen affordance and is
+    // not sent by any client; keep it exempt so genuine correction still works.
+    if (wantsWalkover && !body.force_walkover) {
+      const woWinner = body.winner_id || body.winner_entry_id || prevRowCheck?.winner_entry_id;
+      if (!woWinner) {
+        return NextResponse.json(
+          { error: "A walkover requires a winner (winner_id). Use the red-card / ordinary completion path if the winner is genuinely undetermined." },
+          { status: 400 }
+        );
+      }
+      const existingGames = await queryOne(
+        `SELECT COUNT(*)::int AS cnt FROM games WHERE match_id = $1`,
+        [id]
+      );
+      if (existingGames && existingGames.cnt > 0) {
+        return NextResponse.json(
+          { error: "Cannot declare a walkover: this match already has recorded game(s). A walkover means no game was played." },
+          { status: 409 }
+        );
+      }
+    }
+
     for (const [key, val] of Object.entries(body)) {
       const dbCol = allowedFields[key];
       if (dbCol && val !== undefined) {
