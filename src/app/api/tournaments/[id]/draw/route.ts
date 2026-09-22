@@ -225,15 +225,40 @@ export async function POST(
       // real entry (the other side is NULL). Mark it completed with the real
       // player as winner and auto-advance that winner into the next round, so
       // the bracket stays fully playable for non-power-of-2 player counts.
-      for (const match of inserted) {
-        const hasE1 = !!match.entry_1_id;
-        const hasE2 = !!match.entry_2_id;
-        if (hasE1 !== hasE2) { // exactly one side filled = bye match
-          const byeWinner = hasE1 ? match.entry_1_id : match.entry_2_id;
+      //
+      // P0-8 CASCADE FIX: the loop below is driven by the LIVE DB state
+      // (`dbState`, kept in sync with every UPDATE) instead of the stale
+      // in-memory `inserted` objects, and it is wrapped in a fixpoint loop.
+      // Previously a bye winner written into a later-round slot was never
+      // re-examined in the same pass, so any player who received a bye beyond
+      // round 1 (i.e. a bye winner matched against a NULL opponent) left the
+      // destination match permanently `scheduled` with one side NULL — an
+      // unplayable bye. We now re-scan until no new single-side resolution
+      // occurs, so cascading byes auto-advance recursively to a fixpoint.
+      const dbState = new Map<string, { entry_1_id: string | null; entry_2_id: string | null; status: string }>();
+      for (const m of inserted) {
+        dbState.set(m.db_id, {
+          entry_1_id: m.entry_1_id ?? null,
+          entry_2_id: m.entry_2_id ?? null,
+          status: 'scheduled',
+        });
+      }
+      let byeChanged = true;
+      while (byeChanged) {
+        byeChanged = false;
+        for (const match of inserted) {
+          const live = dbState.get(match.db_id)!;
+          if (live.status === 'completed') continue; // already resolved
+          const hasE1 = !!live.entry_1_id;
+          const hasE2 = !!live.entry_2_id;
+          if (hasE1 === hasE2) continue; // not a bye (both sides filled, or fully TBD)
+          const byeWinner = hasE1 ? live.entry_1_id! : live.entry_2_id!;
           await query(
             `UPDATE matches SET status = 'completed', winner_entry_id = $1, updated_at = now() WHERE id = $2`,
             [byeWinner, match.db_id]
           );
+          live.status = 'completed';
+          byeChanged = true;
           // Auto-advance winner into next match slot
           if (match.next_match_id && typeof match.next_match_id === "string" && match.next_match_id.startsWith("next:")) {
             const targetNum = parseInt(match.next_match_id.replace("next:", ""), 10);
@@ -248,18 +273,17 @@ export async function POST(
                 // byeWinner into a target slot if it already occupies that target
                 // (should be impossible with single-leaf seeding, but defend against
                 // concurrency/edge), and never overwrite an already-filled slot.
-                const tgtRow = await queryOne(
-                  `SELECT entry_1_id, entry_2_id FROM matches WHERE id = $1`,
-                  [target.db_id]
-                );
+                const tgt = dbState.get(target.db_id)!;
                 const slotField = idxInRound % 2 === 0 ? 'entry_1_id' : 'entry_2_id';
-                const occupied = slotField === 'entry_1_id' ? tgtRow?.entry_1_id : tgtRow?.entry_2_id;
-                const otherSlot = slotField === 'entry_1_id' ? tgtRow?.entry_2_id : tgtRow?.entry_1_id;
+                const occupied = slotField === 'entry_1_id' ? tgt.entry_1_id : tgt.entry_2_id;
+                const otherSlot = slotField === 'entry_1_id' ? tgt.entry_2_id : tgt.entry_1_id;
                 if (byeWinner !== otherSlot && !occupied) {
                   await query(
                     `UPDATE matches SET ${slotField} = $1 WHERE id = $2`,
                     [byeWinner, target.db_id]
                   );
+                  if (slotField === 'entry_1_id') tgt.entry_1_id = byeWinner;
+                  else tgt.entry_2_id = byeWinner;
                 }
               }
             }
