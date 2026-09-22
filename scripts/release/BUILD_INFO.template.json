@@ -1,0 +1,17 @@
+{
+  "commit": "ef44a996bcdfcaf450b3f386d899deb67eb88539",
+  "build_id": "hLWMpjN1cOOP1uV-mrjRk",
+  "build_time": "2026-09-02T11:51:26Z",
+  "branch": "umpire-pad-fix-final",
+  "deployment_id": "20260902-1951-ef44a99",
+  "node_version": "v20.20.2",
+  "next_version": "14.2.15",
+  "source_worktree": "/home/tuah/releases/src/tuah2",
+  "built_by": "tuah@tuah.com",
+  "git_dirty": false,
+  "artifact_sha256": "<sha256 of artifact.tar.gz — filled at build time>",
+  "release_notes": "EXAMPLE ONLY — candidate release (NOT deployed). See P0-7-REPORT.md.",
+  "previous_deployment_id": "20260829-2023-qaQdu5Dx-legacy",
+  "schema_version": 1,
+  "generated_by": "tuah2/scripts/release/gen_build_info.sh"
+}
