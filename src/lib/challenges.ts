@@ -1,5 +1,6 @@
 import { query, queryOne } from "@/lib/db";
 import { checkGameOver, checkMatchOver } from "@/lib/scoring";
+import { ChallengePolicyError } from "@/lib/challengeReviewPolicy";
 
 /** BWF: each player has 2 challenges per game; a successful (overturned)
  *  challenge is retained, a failed (upheld) one is consumed. */
@@ -103,11 +104,24 @@ export async function applyOverturnedCorrection(
       ? pointLogRow.player_number
       : null;
 
-  if (awardedSide === null || awardedSide === challengerSide) {
-    // Point not yet awarded (no log) or already on the challenger side:
-    // just add the point to the challenger.
-    if (challengerSide === 1) score1 += 1;
-    else score2 += 1;
+  // P0-4 (D2): the contested point_log is MANDATORY and must be resolvable.
+  // Previously a null/missing point_log_id silently fell through to an
+  // unconditional `score += 1` to the challenger — a free-point mint. We now
+  // refuse to correct when the contested point cannot be resolved to a side,
+  // EXCEPT when the challenger's own side already holds it (a genuine
+  // post-game undo of a point that was awarded to them).
+  if (awardedSide === null) {
+    throw new ChallengePolicyError(
+      422,
+      "POINT_LOG_UNRESOLVABLE",
+      "Contested point_log has no resolvable awarded side; refusing to mint a point"
+    );
+  }
+
+  if (awardedSide === challengerSide) {
+    // Point already on the challenger side: no change is correct here (the
+    // challenge contradicts the existing award, so it is a no-op award).
+    // Previously this branch ADDED a point; that is the free-point path.
   } else {
     // Point was awarded to the opponent -> move it to the challenger.
     if (awardedSide === 1) score1 = Math.max(0, score1 - 1);

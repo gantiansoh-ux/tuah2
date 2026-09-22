@@ -7,6 +7,13 @@ import {
   parseScoringConfig,
   applyOverturnedCorrection,
 } from "@/lib/challenges";
+import {
+  ChallengePolicyError,
+  assertDistinctReviewer,
+  assertMatchNotTerminal,
+  assertResolvablePointLog,
+  assertUmpireNotAlsoPlayer,
+} from "@/lib/challengeReviewPolicy";
 
 const err = (status: number, error: string, code?: string) =>
   NextResponse.json({ error, ...(code ? { code } : {}) }, { status });
@@ -43,9 +50,68 @@ export async function POST(
       return err(409, "Challenge is not pending", "CHALLENGE_STATE_CONFLICT");
     }
 
+    // P0-4 (D1): the reviewer must not be the challenger themselves.
+    // (Interim additive guard — see REQUIRED MIGRATION for created_by.)
+    try {
+      assertDistinctReviewer(challenge, { userId: payload.userId, role: payload.role });
+    } catch (pe: any) {
+      if (pe instanceof ChallengePolicyError) return err(pe.status, pe.message, pe.code);
+      throw pe;
+    }
+
     const authCheck = await canControlMatch(payload.userId, payload.role, challenge.match_id);
     if (!authCheck.ok) return authCheck.response;
     const match = authCheck.match;
+
+    // P0-4 (D1b): dual-role guard — an umpire who is assigned to this match
+    // may not review if they are ALSO a participant in it.
+    const reviewerInMatch = await resolveChallengerSide(
+      match.entry_1_id,
+      match.entry_2_id,
+      payload.userId
+    );
+    try {
+      assertUmpireNotAlsoPlayer(
+        { userId: payload.userId, role: payload.role },
+        { isAssignedUmpire: match.umpire_id === payload.userId, playerInMatch: !!reviewerInMatch }
+      );
+    } catch (pe: any) {
+      if (pe instanceof ChallengePolicyError) return err(pe.status, pe.message, pe.code);
+      throw pe;
+    }
+
+    // P0-4 (D4): a completed match is terminal for this endpoint; do not
+    // silently reopen it by applying a challenge correction.
+    try {
+      assertMatchNotTerminal(match);
+    } catch (pe: any) {
+      if (pe instanceof ChallengePolicyError) return err(pe.status, pe.message, pe.code);
+      throw pe;
+    }
+
+    // P0-4 (D2): the contested point_log must be present and belong to this
+    // challenge's game+match before any correction is computed.
+    if (challenge.point_log_id) {
+      const pl = await queryOne(
+        `SELECT id, game_id, match_id FROM point_logs WHERE id = $1`,
+        [challenge.point_log_id]
+      );
+      try {
+        assertResolvablePointLog(challenge.point_log_id, pl as any, {
+          game_id: challenge.game_id,
+          match_id: challenge.match_id,
+        });
+      } catch (pe: any) {
+        if (pe instanceof ChallengePolicyError) return err(pe.status, pe.message, pe.code);
+        throw pe;
+      }
+    } else {
+      return err(
+        422,
+        "point_log_id is required to review a challenge",
+        "POINT_LOG_REQUIRED"
+      );
+    }
 
     const game = await queryOne(`SELECT * FROM games WHERE id = $1`, [challenge.game_id]);
     if (!game) return err(404, "Game not found", "GAME_NOT_FOUND");

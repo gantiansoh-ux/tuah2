@@ -7,6 +7,10 @@ import {
   countPending,
   resolveChallengerSide,
 } from "@/lib/challenges";
+import {
+  ChallengePolicyError,
+  assertResolvablePointLog,
+} from "@/lib/challengeReviewPolicy";
 
 const err = (status: number, error: string, code?: string) =>
   NextResponse.json({ error, ...(code ? { code } : {}) }, { status });
@@ -33,6 +37,18 @@ export async function POST(req: NextRequest) {
       return err(400, "contested_call must be in or out", "INVALID_CALL");
     }
 
+    // P0-4 (D2): point_log_id is MANDATORY. A challenge without a contested
+    // point log cannot be reviewed deterministically and previously allowed a
+    // free-point mint at review time. Reject early with a stable code.
+    // (Ownership is re-validated against the DB further below.)
+    if (typeof point_log_id !== "string" || point_log_id.length === 0) {
+      return err(
+        400,
+        "point_log_id is required to open a challenge",
+        "POINT_LOG_REQUIRED"
+      );
+    }
+
     const match = await queryOne(`SELECT * FROM matches WHERE id = $1`, [match_id]);
     if (!match) return err(404, "Match not found", "MATCH_NOT_FOUND");
     // Allow challenges while the match is live OR completed (Gan 2026-07-18
@@ -54,12 +70,18 @@ export async function POST(req: NextRequest) {
     // "Post-Game Undo (Umpire Challenge)" rule: undo works even after game
     // point; the correction re-evaluates completion state.
 
+    // P0-4 (D2): re-validate ownership against the DB (authoritative).
     if (point_log_id) {
       const pl = await queryOne(
-        `SELECT id FROM point_logs WHERE id = $1 AND game_id = $2`,
+        `SELECT id, game_id, match_id FROM point_logs WHERE id = $1 AND game_id = $2`,
         [point_log_id, game_id]
       );
-      if (!pl) return err(422, "point_log does not belong to this game", "POINT_LOG_MISMATCH");
+      try {
+        assertResolvablePointLog(point_log_id, pl as any, { game_id, match_id });
+      } catch (pe: any) {
+        if (pe instanceof ChallengePolicyError) return err(pe.status, pe.message, pe.code);
+        throw pe;
+      }
     }
 
     const challengerSide = await resolveChallengerSide(
@@ -88,7 +110,7 @@ export async function POST(req: NextRequest) {
       [
         match_id,
         game_id,
-        point_log_id || null,
+        point_log_id,
         player_id,
         side,
         contested_call,
