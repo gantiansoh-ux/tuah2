@@ -317,6 +317,130 @@ export async function PATCH(
       }
     }
 
+    // ── P0-3 WINNER INTEGRITY GUARD (arbitrary-winner manipulation) ──
+    // The API previously trusted any `winner_id` / `winner_entry_id` supplied by
+    // an authorized caller (assigned umpire or organizer). It never checked that
+    // the winner was one of THIS match's two entries, nor that it was consistent
+    // with the authoritative completed scoring state, and it then auto-advanced
+    // the bracket / routed the loser / could complete the tournament. That let a
+    // rogue/compromised umpire name an arbitrary entrant as the winner and force
+    // bracket advancement or a false champion (Track B B-FAIL-1).
+    //
+    // Rule (server-derived, never client-trusted):
+    //   w    = body.winner_id ?? body.winner_entry_id (undefined if absent)
+    //   both = {entry_1_id, entry_2_id} of the CURRENT row
+    //   (1) If a winner is supplied, it MUST be a member of `both` (non-null slots).
+    //   (2) If the resulting terminal status is `completed`, the winner MUST be
+    //       derivable from AUTHORITATIVE game state: when completed `games` rows
+    //       exist, the winner must equal the majority winner derived from those
+    //       rows; when NO completed games exist, a plain `completed` is rejected
+    //       (a genuine terminal-without-scoring state must use `walkover`, which
+    //       carries its own reason/notes).
+    //   (3) A `completed`/`walkover` transition must supply a winner (unless the
+    //       row already carries one and the caller is only touching other fields).
+    // `force_walkover` (organizer-only controlled reopen) stays exempt so a
+    // genuine correction remains possible; admins are exempt for the
+    // no-scored-games rule for the same controlled-repair reason.
+    {
+      const winnerSupplied =
+        body.winner_id !== undefined || body.winner_entry_id !== undefined;
+      const winnerVal = body.winner_id ?? body.winner_entry_id;
+      const terminalStatus =
+        body.status === 'completed' ||
+        body.status === 'walkover' ||
+        (body.status === undefined &&
+          (prevRowCheck?.status === 'completed' || prevRowCheck?.status === 'walkover'));
+      const isAdmin = payload.role === 'admin';
+      const forceRepair = !!body.force_walkover || isAdmin;
+
+      const slot1 = prevRowCheck?.entry_1_id ?? null;
+      const slot2 = prevRowCheck?.entry_2_id ?? null;
+
+      // (1) Winner, if supplied, must be one of THIS match's two entries.
+      if (winnerSupplied && winnerVal !== null) {
+        if (!winnerVal) {
+          return NextResponse.json(
+            { error: "Invalid winner: winner_entry_id cannot be empty" },
+            { status: 400 }
+          );
+        }
+        const isMember = winnerVal === slot1 || winnerVal === slot2;
+        if (!isMember) {
+          return NextResponse.json(
+            { error: "Invalid winner: winner_entry_id must be one of this match's two entries" },
+            { status: 400 }
+          );
+        }
+      }
+
+      // (2)+(3) Terminal-status consistency with authoritative game state.
+      if (terminalStatus && !forceRepair) {
+        const effectiveWinner = winnerSupplied
+          ? winnerVal
+          : prevRowCheck?.winner_entry_id ?? null;
+
+        if (!effectiveWinner) {
+          return NextResponse.json(
+            { error: "A winner is required to mark this match completed or walkover" },
+            { status: 400 }
+          );
+        }
+
+        if (body.status === 'completed' || (body.status === undefined && prevRowCheck?.status === 'completed')) {
+          // Derive the winner from AUTHORITATIVE completed game rows.
+          const gamesRows = await queryAll(
+            `SELECT winner_id FROM games WHERE match_id = $1 AND is_complete = true`,
+            [id]
+          );
+          let bestOf = 1;
+          try {
+            const cfgRow = await queryOne(
+              `SELECT c.scoring_config FROM matches m JOIN categories c ON m.category_id = c.id WHERE m.id = $1`,
+              [id]
+            );
+            const cfg = cfgRow?.scoring_config
+              ? (typeof cfgRow.scoring_config === 'string' ? JSON.parse(cfgRow.scoring_config) : cfgRow.scoring_config)
+              : null;
+            if (cfg && cfg.best_of) bestOf = Number(cfg.best_of) || 1;
+          } catch { /* default best_of = 1 */ }
+
+          if (gamesRows.length === 0) {
+            return NextResponse.json(
+              { error: "Cannot complete a match with no recorded games. Use a walkover (with a reason) if no game was played." },
+              { status: 409 }
+            );
+          }
+
+          // Count completed-game wins per entry; a winner is legitimate only when
+          // it is a member of the match and reaches the majority (ceil(best_of/2)).
+          const needed = Math.ceil(bestOf / 2);
+          const wins = new Map<string, number>();
+          for (const g of gamesRows) {
+            if (g.winner_id) wins.set(g.winner_id, (wins.get(g.winner_id) || 0) + 1);
+          }
+          const derivedWinner =
+            (wins.get(slot1) || 0) >= needed && (wins.get(slot1) || 0) >= (wins.get(slot2) || 0)
+              ? slot1
+              : ((wins.get(slot2) || 0) >= needed ? slot2 : null);
+
+          if (derivedWinner && effectiveWinner !== derivedWinner) {
+            return NextResponse.json(
+              { error: "Winner contradicts the completed game score for this match" },
+              { status: 409 }
+            );
+          }
+          if (!derivedWinner) {
+            // No entry has clinched a majority yet (e.g. best_of=3 at 1-1, or the
+            // games do not name a winner): the match is not actually over.
+            return NextResponse.json(
+              { error: "This match is not yet decided by its completed games (no majority winner)" },
+              { status: 409 }
+            );
+          }
+        }
+      }
+    }
+
     for (const [key, val] of Object.entries(body)) {
       const dbCol = allowedFields[key];
       if (dbCol && val !== undefined) {
