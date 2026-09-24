@@ -60,6 +60,13 @@ function fmtDateRange(startIso: string, endIso: string): string {
   try {
     const s = new Date(startIso);
     const e = new Date(endIso);
+    // PRODUCT-READINESS-1: guard against corrupt years (e.g. field data "60820-02-02").
+    const plausible = (d: Date) => {
+      const y = d.getFullYear();
+      return !isNaN(d.getTime()) && y >= 2000 && y <= 2100;
+    };
+    if (!plausible(s)) return "Date TBC";
+    if (!plausible(e)) return s.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     const fmt = (d: Date) =>
       d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     if (e.getTime() !== s.getTime() && fmt(e) !== fmt(s)) {
