@@ -912,17 +912,18 @@ export default function TournamentDetailPage({
         {/* ------ TABS ------ */}
         <div className="flex gap-1 bg-white rounded-xl p-1 border border-gray-100 shadow-sm mb-6 overflow-x-auto">
           {[
-            { key: "overview", label: "Overview" },
-            { key: "entries", label: `Players (${entries.length})` },
-            { key: "draw", label: `Draw (${matches.length})` },
-            { key: "matches", label: "Live Matches" },
-            { key: "registration", label: `Registrations${pendingRegs.length > 0 ? ` (${pendingRegs.length})` : ""}` },
+            { key: "overview", label: "Overview", short: "Overview" },
+            { key: "entries", label: `Players (${entries.length})`, short: "Players" },
+            { key: "draw", label: `Draw (${matches.length})`, short: "Draw" },
+            { key: "matches", label: "Live Matches", short: "Live" },
+            { key: "registration", label: `Registrations${pendingRegs.length > 0 ? ` (${pendingRegs.length})` : ""}`, short: `Regs${pendingRegs.length > 0 ? ` (${pendingRegs.length})` : ""}` },
           ].map((tab) => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-              className={`flex-1 py-3 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+              className={`flex-1 py-3 px-1.5 rounded-lg text-[11px] md:text-sm font-medium transition-all whitespace-nowrap min-w-0 ${
                 activeTab === tab.key ? "bg-emerald-700 text-white" : "text-gray-500 hover:text-gray-900"
               }`}>
-              {tab.label}
+              <span className="hidden md:inline">{tab.label}</span>
+              <span className="md:hidden">{tab.short}</span>
             </button>
           ))}
         </div>
