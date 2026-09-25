@@ -239,12 +239,24 @@ export default function AudiencePortalPage({
                 className="bg-emerald-700/60 border border-emerald-400/40 text-white font-semibold px-4 py-3 rounded-xl hover:bg-emerald-600/60 transition-all">
                 📱 QR
               </button>
-              {(tournament?.status === "registration" || tournament?.status === "published" || tournament?.status === "draft") && (
-                <button onClick={() => { setRegMsg(null); setShowRegister(true); }}
-                  className="bg-white text-emerald-900 font-bold px-6 py-3 rounded-xl hover:bg-emerald-50 transition-all">
-                  + Join Tournament
-                </button>
-              )}
+              {(() => {
+                const open = tournament?.status === "registration" || tournament?.status === "published";
+                if (open) {
+                  return (
+                    <button onClick={() => { setRegMsg(null); setShowRegister(true); }}
+                      className="bg-white text-emerald-900 font-bold px-6 py-3 rounded-xl hover:bg-emerald-50 transition-all shadow-lg">
+                      Register for this event
+                    </button>
+                  );
+                }
+                return (
+                  <button disabled
+                    title="Registration is closed for this tournament"
+                    className="bg-white/20 border border-white/30 text-white/70 font-semibold px-6 py-3 rounded-xl cursor-not-allowed">
+                    Registration closed
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -316,8 +328,8 @@ export default function AudiencePortalPage({
         {showRegister && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Join Tournament</h2>
-              <p className="text-gray-500 mb-6">Select a category to register</p>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Register for this tournament</h2>
+              <p className="text-gray-500 mb-6">Choose the category you want to enter.</p>
               <div className="space-y-3">
                 {categories.length > 0 ? categories.map((cat) => (
                   <div key={cat.id} className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
@@ -644,11 +656,15 @@ export default function AudiencePortalPage({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
             <div className="text-5xl mb-4">🔐</div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Sign in Required</h2>
-            <p className="text-gray-500 mb-6">Please sign in to register for this tournament.</p>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Sign in to register</h2>
+            <p className="text-gray-500 mb-6">You need a TUAH account to enter this tournament. New here? Creating one takes a few seconds.</p>
             <Link href="/auth/login"
               className="block w-full bg-emerald-700 text-white py-3 rounded-xl font-bold hover:bg-emerald-600 mb-3">
               Sign In
+            </Link>
+            <Link href="/auth/register"
+              className="block w-full bg-white border border-emerald-200 text-emerald-700 py-3 rounded-xl font-bold hover:bg-emerald-50 mb-3">
+              Create an account
             </Link>
             <button onClick={() => setShowLoginPrompt(false)}
               className="w-full py-3 border border-gray-200 rounded-xl text-gray-600 font-medium hover:bg-gray-50">

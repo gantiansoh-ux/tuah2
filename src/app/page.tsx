@@ -31,8 +31,12 @@ function HomeContent() {
       .then((r) => r.json())
       .then((d) => {
         const list: PublicTournament[] = (d.tournaments || []).filter(
-          // Filter out obvious test/garbage tournaments for a clean client demo
-          (t) => !/test|v2|clean/i.test(t.title) && t.title.trim().length > 0
+          // PRODUCT-READINESS-1: the API already excludes test fixtures; this is a
+          // last-resort guard for the homepage showcase so junk can never surface here.
+          (t: PublicTournament) =>
+            t.title.trim().length > 0 &&
+            !/test|v2|clean|audit|swiss|dbg|e2e/i.test(t.title) &&
+            !/\b(DE|SW)[0-9-]/i.test(t.title)
         );
         // Rank: in_progress first, then published, then completed; cap at 6
         const rank: Record<string, number> = { in_progress: 0, published: 1, completed: 2 };
@@ -65,7 +69,11 @@ function HomeContent() {
 
   const fmtDate = (iso: string) => {
     try {
-      return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+      const d = new Date(iso);
+      // PRODUCT-READINESS-1: never render a corrupt year (e.g. "2 Feb 60820").
+      const y = d.getFullYear();
+      if (isNaN(d.getTime()) || y < 2000 || y > 2100) return "Date TBC";
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     } catch {
       return "";
     }
@@ -78,7 +86,8 @@ function HomeContent() {
           <span className="text-2xl font-black tracking-tight">TUAH</span>
           <span className="text-emerald-300 text-xs font-medium">.com</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
+          <Link href="/tournaments" className="text-sm hover:text-emerald-300">Tournaments</Link>
           {user ? (
             <>
               {user.role === 'organizer' || user.role === 'admin' ? (
@@ -106,13 +115,11 @@ function HomeContent() {
           <h1 className="text-5xl md:text-7xl font-black mb-6 tracking-tight">
             TUAH<span className="text-emerald-300">.com</span>
           </h1>
-          <p className="text-xl md:text-2xl text-emerald-100 max-w-3xl mx-auto mb-4">
-            Tournament Umpire Automation Hawkeye
+          <p className="text-xl md:text-3xl font-bold text-white max-w-3xl mx-auto mb-4">
+            Run a badminton tournament from start to finish.
           </p>
-          <p className="text-lg text-emerald-200 max-w-2xl mx-auto mb-12">
-            The all-in-one DIY platform for badminton tournaments. 
-            Host competitions, manage draws, score matches live, and connect with players, umpires, coaches, and courts — 
-            all without needing our help.
+          <p className="text-base text-emerald-100 max-w-2xl mx-auto mb-10">
+            <span className="font-semibold">Free to organise.</span> Players, umpires and spectators join from any phone with a link.
           </p>
           {user ? (
             <Link href={user.role === 'organizer' || user.role === 'admin' ? "/organizer" : "/player"}
@@ -120,10 +127,17 @@ function HomeContent() {
               {user.role === 'organizer' || user.role === 'admin' ? 'Go to Dashboard →' : 'Browse Tournaments →'}
             </Link>
           ) : (
+            <div className="flex flex-wrap items-center justify-center gap-4">
             <Link href="/auth/register"
               className="inline-block bg-white text-emerald-900 font-bold px-10 py-4 rounded-2xl text-lg hover:bg-emerald-50 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:translate-y-0">
               Start Your Tournament →
             </Link>
+
+              <Link href="/tournaments"
+                className="inline-block bg-emerald-700/40 border border-emerald-300/60 text-white font-bold px-8 py-4 rounded-2xl text-lg hover:bg-emerald-700/60 transition-all">
+                Browse tournaments →
+              </Link>
+            </div>
           )}
         </div>
       </section>
@@ -191,17 +205,17 @@ function HomeContent() {
         </h2>
         <div className="flex flex-wrap justify-center gap-6">
           {[
-            { emoji: "🏆", title: "Organizer", href: "/organizer", desc: "Host tournaments your way. Set categories, manage registrations, auto-generate draws, assign umpires, book courts — all from one dashboard.", color: "emerald" },
-            { emoji: "🏸", title: "Player", href: "/player", desc: "Find and join tournaments near you. Create your player profile with photos and videos to attract sponsors. Track your match history and rankings.", color: "blue" },
-            { emoji: "🎯", title: "Umpire", href: "/umpire", desc: "Register as an umpire and get hired for tournaments. Set your rate, update your availability, and build your reputation.", color: "yellow" },
-            { emoji: "📋", title: "Coach", href: "/coach", desc: "Showcase your coaching credentials and attract students. Get reviewed by players and build your reputation.", color: "purple" },
-            { emoji: "🏟️", title: "Court Owner", href: "/court-owner", desc: "List your badminton courts for organizers and players to book. Manage availability, set hourly rates.", color: "orange" },
+            { emoji: "\u{1F3C6}", title: "Organizer", href: "/organizer", badge: "", desc: "Host tournaments your way: set categories, manage registrations, auto-generate draws and assign umpires - all from one dashboard.", color: "emerald" },
+            { emoji: "\u{1F3F8}", title: "Player", href: "/player", badge: "", desc: "Find and join tournaments, register for your events, and track your match history.", color: "blue" },
+            { emoji: "\u{1F3AF}", title: "Umpire", href: "/umpire", badge: "", desc: "Apply or get invited to tournaments, then score matches point-by-point on your phone.", color: "yellow" },
+            { emoji: "\u{1F4CB}", title: "Coach", href: "/coach", badge: "Coming soon", desc: "Coach profiles, student discovery and reviews are on the way.", color: "purple" },
+            { emoji: "\u{1F3DF}", title: "Court Owner", href: "/court-owner", badge: "Coming soon", desc: "Court listings, availability and booking are on the way.", color: "orange" },
           ].map((item) => (
             <Link key={item.title} href={item.href} className="block bg-white rounded-2xl p-8 shadow-sm border border-gray-100 hover:shadow-lg transition-all hover:-translate-y-1 w-full md:w-[380px]">
               <div className={`w-14 h-14 bg-${item.color}-100 rounded-2xl flex items-center justify-center mb-5`}>
                 <span className="text-3xl">{item.emoji}</span>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}{(item as any).badge ? <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{(item as any).badge}</span> : null}</h3>
               <p className="text-gray-600 text-sm leading-relaxed">{item.desc}</p>
             </Link>
           ))}
@@ -238,6 +252,9 @@ function HomeContent() {
           <h2 className="text-4xl font-bold mb-6">Ready to host your tournament?</h2>
           <p className="text-emerald-200 text-lg mb-10 max-w-2xl mx-auto">
             No calls, no meetings, no training needed. Sign up and start organizing in 5 minutes.
+          </p>
+          <p className="text-base text-emerald-100 max-w-2xl mx-auto mb-10">
+            <span className="font-semibold">Free to organise.</span> Players, umpires and spectators join from any phone with a link.
           </p>
           {user ? (
             <Link href={user.role === 'organizer' || user.role === 'admin' ? "/organizer" : "/player"}

@@ -820,8 +820,9 @@ export default function TournamentDetailPage({
                     + Category
                   </button>
                   <button onClick={() => setShowAddPlayer(true)}
-                    className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
-                    + Player
+                    className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50"
+                    title="How players join: share a link so they register themselves">
+                    {"\u{1F517}"} Invite Players
                   </button>
                   <button onClick={() => setShowImport(true)}
                     className="border border-emerald-200 text-emerald-700 px-4 py-2.5 rounded-xl font-medium text-sm hover:bg-emerald-50">
@@ -1016,8 +1017,9 @@ export default function TournamentDetailPage({
               {isOwner && (
                 <div className="flex gap-2">
                   <button onClick={() => setShowAddPlayer(true)}
-                    className="text-sm border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50">
-                    + Add
+                    className="text-sm border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50"
+                    title="How players join: share a link so they register themselves">
+                    {"\u{1F517}"} Invite Players
                   </button>
                   <button onClick={() => setShowImport(true)}
                     className="text-sm border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-lg hover:bg-emerald-50">
@@ -2386,13 +2388,13 @@ export default function TournamentDetailPage({
 
             {/* --- Add Player -> Self-Registration --- */}
       {showAddPlayer && (
-        <Modal title="Self-Registration Only" onClose={() => setShowAddPlayer(false)}>
+        <Modal title="How Players Join" onClose={() => setShowAddPlayer(false)}>
           <div className="space-y-4">
             <div className="bg-blue-50 rounded-xl p-6 text-center">
               <div className="text-4xl mb-3">{"\u{1F6AB}"}</div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2">Players Must Register Themselves</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Players register themselves</h3>
               <p className="text-sm text-gray-600 mb-4">
-                Share the tournament link so players can sign up. You can approve them from the Registrations tab.
+                Share the tournament link so players can sign up. You then approve them from the Registrations tab. Need to add many players at once? Use CSV import.
               </p>
               <div className="bg-white rounded-xl p-4 border border-blue-200">
                 <p className="text-xs text-gray-500 mb-1">Player Registration Link:</p>
@@ -2401,10 +2403,16 @@ export default function TournamentDetailPage({
                 </code>
               </div>
             </div>
-            <button onClick={() => setShowAddPlayer(false)}
-              className="w-full py-3 bg-emerald-700 text-white rounded-xl font-semibold hover:bg-emerald-600">
-              Got it
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowAddPlayer(false); setShowImport(true); }}
+                className="flex-1 py-3 border border-emerald-200 text-emerald-700 rounded-xl font-semibold hover:bg-emerald-50">
+                {"\u{1F4E5}"} Import via CSV
+              </button>
+              <button onClick={() => setShowAddPlayer(false)}
+                className="flex-1 py-3 bg-emerald-700 text-white rounded-xl font-semibold hover:bg-emerald-600">
+                Got it
+              </button>
+            </div>
           </div>
         </Modal>
       )}

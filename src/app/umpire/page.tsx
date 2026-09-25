@@ -159,18 +159,18 @@ export default function UmpireDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-emerald-900 text-white px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <nav className="bg-emerald-900 text-white px-3 md:px-6 py-3 md:py-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 md:gap-3">
           <span className="text-xl">{"\u{1F989}"}</span>
           <span className="font-bold">Umpire Dashboard</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3 min-w-0">
           {rating && rating.review_count > 0 && (
             <span className="text-sm bg-emerald-800 px-3 py-1 rounded-full">
               ★ {rating.avg_rating} ({rating.review_count})
             </span>
           )}
-          <span className="text-sm text-emerald-200">{user.email}</span>
+          <span className="hidden md:inline text-sm text-emerald-200 truncate max-w-[220px]">{user.email}</span>
           <Link href="/umpire/profile" className="text-sm bg-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-700 font-medium">⚙️ Profile & Availability</Link>
           <Link href="/" className="text-sm text-emerald-200 hover:text-emerald-100">← Home</Link>
         </div>
